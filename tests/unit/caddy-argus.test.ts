@@ -43,6 +43,16 @@ describe('Argus rules with the current Ingressi WAF builder', () => {
     expect(buildWafHandlerEntry(waf, false).handler).toBe('waf');
   });
 
+  it('keeps the ML overlay free of the sidecar stack', () => {
+    const overlay = readFileSync(resolve('docker-compose.argus.yml'), 'utf8');
+    expect(overlay).toContain('image: ingressi-caddy-argus:local');
+    // The inference service runs as its own Compose stack and only shares the
+    // socket volume, mounted here as an external named volume.
+    expect(overlay).not.toMatch(/^\s*argus-sidecar:/m);
+    expect(overlay).toContain('external: true');
+    expect(overlay).toContain('${ARGUS_SOCKET_VOLUME:-ingressi-argus-run}');
+  });
+
   it('retains the ML overlay during L4 port-manager recreation', () => {
     const overlay = readFileSync(resolve('docker-compose.argus.yml'), 'utf8');
     const manager = readFileSync(resolve('docker/l4-port-manager/entrypoint.sh'), 'utf8');

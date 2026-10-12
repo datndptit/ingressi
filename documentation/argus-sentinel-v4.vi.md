@@ -47,62 +47,76 @@ phiên bản cần chép cứng sang script:
 | gRPC Go / protobuf Go | 1.83.2 / 1.36.12 |
 | coraza-mlcheck / argus-sidecar | 0.1.0 / 0.1.0 |
 
-## Model riêng và cấu hình Ubuntu
+## Sidecar stack riêng
 
 Code public:
 [coraza-mlcheck](https://github.com/datndptit/coraza-mlcheck) và
 [argus-sidecar](https://github.com/datndptit/argus-sidecar).
-Model, tokenizer và dữ liệu huấn luyện không nằm trong repo/image.
-Chuẩn bị bundle đáng tin cậy gồm `model.onnx`, `tokenizer.json`, `config.json`,
-`preprocess.py`, `inference_cpu.py`:
+Ingressi **không** chạy sidecar trong stack của mình: sidecar là một stack
+Compose riêng, hai bên chỉ chia sẻ volume socket. Model, tokenizer và dữ liệu
+huấn luyện không nằm trong repo/image. Chuẩn bị bundle đáng tin cậy gồm
+`model.onnx`, `tokenizer.json`, `config.json`, `preprocess.py`,
+`inference_cpu.py`, rồi dựng và chạy sidecar theo README của repo đó:
 
 ```sh
-git clone --branch v0.1.0 --depth 1 https://github.com/datndptit/argus-sidecar.git /tmp/argus-sidecar-v0.1.0
-sudo python3 /tmp/argus-sidecar-v0.1.0/scripts/prepare-model.py \
-  /srv/argus-sentinel-v4-source /opt/argus/models/sentinel-v4
-sudo chown -R 10000:10000 /opt/argus/models/sentinel-v4
-sudo chmod 0750 /opt/argus/models/sentinel-v4
-sudo find /opt/argus/models/sentinel-v4 -maxdepth 1 -type f -exec chmod 0640 {} +
+git clone --branch v0.1.0 https://github.com/datndptit/argus-sidecar.git
+cd argus-sidecar
+sudo python3 scripts/prepare-model.py /path/to/argus_sentinel_v4 /opt/argus/models/v4
+sudo chown -R 10000:10000 /opt/argus/models/v4
+sudo chmod 0750 /opt/argus/models/v4
+sudo find /opt/argus/models/v4 -maxdepth 1 -type f -exec chmod 0640 {} +
+export ARGUS_MODEL_DIR_HOST=/opt/argus/models/v4
+export ARGUS_SOCKET_VOLUME=ingressi-argus-run
+docker compose build --pull
+docker compose up -d
+docker compose exec argus-sidecar python -m argus_sidecar.healthcheck
 ```
 
 Manifest kiểm tra toàn vẹn bundle; không xác thực tác giả. Hai file Python
-được runtime nạp nên phải lấy bundle từ nguồn tin cậy.
+được runtime nạp nên phải lấy bundle từ nguồn tin cậy. Sidecar đặt tên
+volume socket bằng `ARGUS_SOCKET_VOLUME` (mặc định `ingressi-argus-run`);
+overlay Ingressi tham chiếu đúng tên đó dưới dạng volume external, nên hai
+stack dùng chung socket dù chạy ở project Compose khác nhau. Với volume mới,
+khởi động sidecar trước để volume được tạo với đúng quyền (image sidecar đã
+chuẩn bị sẵn `/run/argus`).
+
+## Cấu hình Ingressi
 
 Trong `.env` hiện có của Ingressi, giữ thông tin cấu hình/credentials đang dùng
 và thêm (các lệnh chạy tại thư mục checkout Ingressi đã có thay đổi này):
 
 ```dotenv
 COMPOSE_FILE=docker-compose.yml:docker-compose.argus.yml
-ARGUS_MODEL_DIR_HOST=/opt/argus/models/sentinel-v4
-ARGUS_THRESHOLD=fpr0.1%
+ARGUS_SOCKET_VOLUME=ingressi-argus-run
 ARGUS_TIMEOUT_MS=50
 ```
 
 Giữ thêm các overlay khác nếu hệ thống đang dùng. Dấu phân cách `:` ở đây
-là cho Ubuntu. Caddy và sidecar mặc định UID/GID 10000:10000, socket 0660,
-volume riêng theo Compose project. Không mở cổng TCP cho sidecar.
+là cho Ubuntu. `ARGUS_SOCKET_VOLUME` phải khớp giá trị đã dùng cho stack
+sidecar. Volume `argus-run` trong overlay là **external**: compose không tạo,
+không xóa, nên `docker compose down -v` của Ingressi không thể phá socket
+đang sống. Caddy và sidecar mặc định UID/GID 10000:10000, socket 0660.
+Không mở cổng TCP cho sidecar.
 
-Nếu PUID/PGID khác 10000: đặt `ARGUS_SIDECAR_IMAGE=argus-sidecar:local`, bỏ
-lệnh pull sidecar, chạy `docker compose build argus-sidecar`; build lấy
-source từ tag GitHub và truyền ID tương ứng. Chỉnh quyền model/volume theo
-ID đó. Không dùng image dựng sẵn UID 10000 với Caddy có ID khác.
+Nếu PUID/PGID khác 10000: dựng lại sidecar với `--build-arg PUID=... PGID=...`
+theo README sidecar và chỉnh quyền model/volume theo ID đó; phía Caddy đặt
+`PUID`/`PGID` trong `.env` như mọi service khác của Ingressi. Không dùng
+image dựng sẵn UID 10000 với Caddy có ID khác.
 
 ## Build, rollout và rollback
 
 ```sh
 docker compose config --quiet
-docker compose pull argus-sidecar
 docker compose build caddy
-docker compose up -d --no-deps --no-build --pull never argus-sidecar
-# Đợi model khởi tạo; chạy lại healthcheck nếu chưa sẵn sàng:
-docker compose exec argus-sidecar python -m argus_sidecar.healthcheck
 docker compose up -d --no-deps --no-build --pull never caddy l4-port-manager
 
 docker compose exec caddy caddy build-info | grep github.com/datndptit/coraza-mlcheck
 docker compose exec caddy caddy list-modules | grep dns.providers.bunny
 ```
 
-Các lệnh này cập nhật một stack Ingressi đã được cấu hình. Nếu cài mới,
+Các lệnh này cập nhật một stack Ingressi đã được cấu hình; stack sidecar
+(mục trên) phải đang chạy trước vì volume socket là external — thiếu nó
+compose báo lỗi thiếu volume, không âm thầm chạy Caddy thiếu ML. Nếu cài mới,
 khởi tạo các service còn lại theo hướng dẫn Ingressi và luôn giữ overlay ML.
 Có thể build riêng binary image mà không cần credentials Compose bằng:
 
@@ -141,8 +155,9 @@ Model mount bên ngoài nên chỉ đổi image không rollback được model.
   mlcheck global; đặt cả bộ ở host hoặc dùng override. Tránh trùng rule ID.
 - `allowWebsocket=true` chỉ bypass **upgrade handshake**, HTTP thường vẫn
   qua WAF/ML. WebSocket frames và traffic L4 không được ML HTTP kiểm tra.
-- Client đọc các biến timeout, inflight, queue, circuit và metrics từ
-  overlay. Sidecar có CPU/memory/PID cap, read-only filesystem và shared UDS.
+- Caddy đọc các biến timeout, inflight, queue, circuit và metrics từ
+  overlay; sidecar đọc cấu hình của nó từ stack riêng (CPU/memory/PID cap,
+  read-only filesystem nằm trong repo sidecar). Hai bên chỉ chung UDS.
 
 ## Kết quả kiểm chứng
 
@@ -159,8 +174,9 @@ Model mount bên ngoài nên chỉ đổi image không rollback được model.
 - HTTP thường vẫn bị chặn khi allowWebsocket bật, upgrade handshake được
   bypass. Sidecar dừng: ML fail-open/circuit open, CRS vẫn chặn; sidecar
   khởi động lại: ML tự phục hồi.
-- Compose merge với overlay ML và overlay cổng L4 giữ đúng image, socket,
-  biến môi trường và cấu hình extra file của port manager.
+- Compose merge với overlay ML và overlay cổng L4 giữ đúng image, biến môi
+  trường, volume socket external dùng chung với stack sidecar và cấu hình
+  extra file của port manager; overlay không chứa service sidecar.
 
 Workflow public [Ingressi compatibility](https://github.com/datndptit/coraza-mlcheck/actions/workflows/ingressi.yml)
 build lại đúng revision được ghim bằng Dockerfile upstream;

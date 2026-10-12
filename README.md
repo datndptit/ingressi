@@ -6,13 +6,15 @@ Self-hosted reverse proxy built on [Caddy](https://caddyserver.com/): proxy host
 
 This fork adds the published `datndptit/coraza-mlcheck` action to Ingressi's
 manifest-based Caddy build and an optional `docker-compose.argus.yml` overlay
-for `datndptit/argus-sidecar`. Enable detection or blocking through existing
-WAF custom rules. No additional management UI is required.
+that runs the ML-enabled Caddy image. The `datndptit/argus-sidecar` inference
+service is deployed as its own Compose stack and shares only the socket
+volume. Enable detection or blocking through existing WAF custom rules.
+No additional management UI is required.
 
 Follow the [Ubuntu 24.04 ML deployment guide](documentation/argus-sentinel-v4.vi.md)
-before starting the ML stack. It covers the private model mount, Caddy build,
-socket permissions, L4 port-manager configuration, rules and rollback.
-The generic quick start below runs the base stack without ML.
+before starting the ML stack. It covers the sidecar stack and private model,
+Caddy build, socket volume, L4 port-manager configuration, rules and
+rollback. The generic quick start below runs the base stack without ML.
 
 [![License: MIT + Elastic-2.0 (ee/)](https://img.shields.io/badge/license-MIT%20%2B%20Elastic--2.0%20%28ee%2F%29-green.svg)](#license)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org/)

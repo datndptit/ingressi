@@ -43,5 +43,8 @@ jobs:
           ADMIN_PASSWORD: ci-validation-only
           SESSION_SECRET: ci-validation-only-not-for-deployment
           CLICKHOUSE_PASSWORD: ci-validation-only
-          ARGUS_MODEL_DIR_HOST: /opt/argus/models/v4
-        run: docker compose -f docker-compose.yml -f docker-compose.argus.yml config --quiet
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.argus.yml config --quiet
+          if docker compose -f docker-compose.yml -f docker-compose.argus.yml config | grep -q 'argus-sidecar'; then
+            echo 'The ML overlay must not run the sidecar service'; exit 1
+          fi
