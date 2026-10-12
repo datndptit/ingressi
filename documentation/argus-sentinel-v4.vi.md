@@ -45,7 +45,7 @@ phiên bản cần chép cứng sang script:
 | coraza-caddy / Coraza | 2.6.1 / 3.8.1 |
 | CRS | 4.25.0 |
 | gRPC Go / protobuf Go | 1.83.2 / 1.36.12 |
-| coraza-mlcheck / argus-sidecar | 0.1.0 / 0.1.0 |
+| coraza-mlcheck / argus-sidecar | 0.1.0 / 0.1.1 |
 
 ## Sidecar stack riêng
 
@@ -59,18 +59,26 @@ huấn luyện không nằm trong repo/image. Chuẩn bị bundle đáng tin c�
 `inference_cpu.py`, rồi dựng và chạy sidecar theo README của repo đó:
 
 ```sh
-git clone --branch v0.1.0 https://github.com/datndptit/argus-sidecar.git
+git clone --branch v0.1.1 https://github.com/datndptit/argus-sidecar.git
 cd argus-sidecar
 sudo python3 scripts/prepare-model.py /path/to/argus_sentinel_v4 /opt/argus/models/v4
 sudo chown -R 10000:10000 /opt/argus/models/v4
 sudo chmod 0750 /opt/argus/models/v4
 sudo find /opt/argus/models/v4 -maxdepth 1 -type f -exec chmod 0640 {} +
-export ARGUS_MODEL_DIR_HOST=/opt/argus/models/v4
-export ARGUS_SOCKET_VOLUME=ingressi-argus-run
+cp .env.example .env
+# Edit .env: persist the model path, socket volume and socket path.
+docker compose config --quiet
 docker compose build --pull
 docker compose up -d
 docker compose exec argus-sidecar python -m argus_sidecar.healthcheck
 ```
+
+Lưu `.env` ngay trong repo sidecar để phiên SSH sau không phụ thuộc các lệnh
+`export`. Nếu nâng từ v0.1.0, lấy tag v0.1.1 và giữ `.env` hiện có; nếu chưa
+có thì tạo từ `.env.example` rồi điền đúng đường dẫn model đã triển khai.
+Cả `ARGUS_SOCKET_VOLUME` và `ARGUS_SOCKET` phải khớp trong `.env` của hai
+stack. Socket tùy chỉnh phải nằm trong `/run/argus`. Nếu đổi socket, recreate
+cả sidecar lẫn Caddy để nhận cấu hình mới.
 
 Manifest kiểm tra toàn vẹn bundle; không xác thực tác giả. Hai file Python
 được runtime nạp nên phải lấy bundle từ nguồn tin cậy. Sidecar đặt tên
@@ -88,6 +96,7 @@ và thêm (các lệnh chạy tại thư mục checkout Ingressi đã có thay �
 ```dotenv
 COMPOSE_FILE=docker-compose.yml:docker-compose.argus.yml
 ARGUS_SOCKET_VOLUME=ingressi-argus-run
+ARGUS_SOCKET=/run/argus/argus.sock
 ARGUS_TIMEOUT_MS=50
 ```
 
@@ -184,7 +193,7 @@ build lại đúng revision được ghim bằng Dockerfile upstream;
 Hướng dẫn và
 patch portable nằm tại [docs/ingressi.md](https://github.com/datndptit/coraza-mlcheck/blob/main/docs/ingressi.md).
 Tích hợp Ingressi nằm trên `develop` của fork; sửa hướng dẫn/CI của hai repo
-thành phần nằm trên `main`. Runtime tiếp tục dùng release `v0.1.0`, không đổi
-tag đã phát hành. Chưa deploy lên VM production hay benchmark tải.
+thành phần nằm trên `main`. Plugin tiếp tục dùng `v0.1.0`; sidecar dùng `v0.1.1` để sửa truyền cấu hình
+Compose và lưu `.env`. Không đổi tag đã phát hành. Chưa deploy lên VM production hay benchmark tải.
 Coraza dùng experimental plugin API nên phải chạy lại kiểm chứng khi nâng
 phiên bản Ingressi/Coraza, không suy rộng kết quả này cho mọi bản tương lai.

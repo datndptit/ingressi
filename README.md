@@ -11,19 +11,25 @@ Requirements: Linux amd64 with Docker Engine and Compose v2 (Ubuntu 24.04 is the
 ### 1. Deploy the sidecar stack (separate project; start it first)
 
 ```sh
-git clone --branch v0.1.0 https://github.com/datndptit/argus-sidecar.git
+git clone --branch v0.1.1 https://github.com/datndptit/argus-sidecar.git
 cd argus-sidecar
 sudo install -d -m 0755 /opt/argus/models
 sudo python3 scripts/prepare-model.py /path/to/argus_sentinel_v4 /opt/argus/models/v4
 sudo chown -R 10000:10000 /opt/argus/models/v4
 sudo chmod 0750 /opt/argus/models/v4
 sudo find /opt/argus/models/v4 -maxdepth 1 -type f -exec chmod 0640 {} +
-export ARGUS_MODEL_DIR_HOST=/opt/argus/models/v4
-export ARGUS_SOCKET_VOLUME=ingressi-argus-run
+cp .env.example .env
+# Edit .env: persist the model path, socket volume and socket path.
+docker compose config --quiet
 docker compose build --pull
 docker compose up -d
 docker compose exec argus-sidecar python -m argus_sidecar.healthcheck
 ```
+
+Keep the sidecar `.env` for later SSH sessions. Match **both**
+`ARGUS_SOCKET_VOLUME` and `ARGUS_SOCKET` with Ingressi; custom socket paths
+must be inside `/run/argus`. Existing installations should update the
+sidecar checkout to v0.1.1 and keep their `.env`, rather than overwrite it.
 
 ### 2. Deploy this repository with the ML overlay
 
@@ -32,6 +38,7 @@ On a fresh install, start from the base `.env.example` and fill in the required 
 ```dotenv
 COMPOSE_FILE=docker-compose.yml:docker-compose.argus.yml
 ARGUS_SOCKET_VOLUME=ingressi-argus-run
+ARGUS_SOCKET=/run/argus/argus.sock
 ```
 
 Build the ML-enabled Caddy image and recreate it (plus the L4 port manager):
