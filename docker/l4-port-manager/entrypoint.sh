@@ -26,8 +26,8 @@
 #   COMPOSE_SKIP_OVERRIDE - If non-empty, skip docker-compose.override.yml (useful in test environments)
 #   COMPOSE_EXTRA_FILE    - If set, include this additional compose file (e.g. a test-specific override)
 #   COMPOSE_EXTRA_FILES   - Colon-separated list of additional compose files, all included; combined
-#                           with COMPOSE_EXTRA_FILE (when that is set). Files that do not exist are
-#                           skipped, so one list can cover optional overlays (e.g. Argus and CrowdSec).
+#                           with COMPOSE_EXTRA_FILE prepended unless already listed. Files that do
+#                           not exist are skipped; list only overlays selected for this deployment.
 #   APPLY_LOCK_MAX_AGE    - Seconds after which an apply lock is considered stale (default: 10)
 #   CADDY_STARTUP_WAIT    - Seconds to wait at startup for a stopped caddy container to come back, e.g.
 #                           while an image updater recreates it, before recreating it here (default: 60)
@@ -164,14 +164,14 @@ do_apply() {
   fi
   # Extra overlay files: the colon-separated COMPOSE_EXTRA_FILES (preferred
   # when set) plus the single COMPOSE_EXTRA_FILE, which older overlays still
-  # set. A file that does not exist is skipped, so one configured list can
-  # cover optional overlays — recreating Caddy then keeps every overlay that
-  # is actually in use (e.g. Argus and CrowdSec together, or just one).
+  # set. Prepend the legacy overlay unless explicitly positioned in the list:
+  # e.g. Argus must precede CrowdSec so the latter's image and key are kept.
+  # File existence is not activation: only list overlays selected at startup.
   EXTRA_FILES="${COMPOSE_EXTRA_FILES:-}"
   if [ -n "$COMPOSE_EXTRA_FILE" ]; then
     case ":$EXTRA_FILES:" in
       *":$COMPOSE_EXTRA_FILE:"*) ;;
-      *) EXTRA_FILES="${EXTRA_FILES:+$EXTRA_FILES:}$COMPOSE_EXTRA_FILE" ;;
+      *) EXTRA_FILES="$COMPOSE_EXTRA_FILE${EXTRA_FILES:+:$EXTRA_FILES}" ;;
     esac
   fi
   if [ -n "$EXTRA_FILES" ]; then

@@ -82,10 +82,15 @@ CROWDSEC_POSTGRES_PASSWORD=...
 ```
 
 ```sh
-docker compose build web caddy
+docker compose build web caddy l4-port-manager
 docker compose up -d
 docker compose exec crowdsec cscli lapi status
 ```
+
+Build and recreate the port manager too when upgrading an existing stack: its
+fork image preserves the selected overlays when Caddy's L4 ports change.
+CrowdSec alone does not require the Argus socket volume; adding the Argus
+overlay also retains it during port changes.
 
 Full guide (Vietnamese): [documentation/crowdsec.vi.md](documentation/crowdsec.vi.md).
 

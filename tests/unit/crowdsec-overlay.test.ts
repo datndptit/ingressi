@@ -35,14 +35,15 @@ describe('docker-compose.crowdsec.yml', () => {
     expect(acquisition()).toContain('type: caddy');
   });
 
-  it('pins the caddy and web services to the images built from this fork', () => {
+  it('pins caddy, web and the port manager to the images built from this fork', () => {
     expect(overlay()).toContain('image: ingressi-caddy-crowdsec:local');
     expect(overlay()).toContain('image: ingressi-web-crowdsec:local');
+    expect(overlay()).toContain('image: ingressi-l4-port-manager-crowdsec:local');
   });
 
   it('keeps every overlay during L4 port-manager recreation', () => {
     expect(overlay()).toContain(
-      'COMPOSE_EXTRA_FILES: ${COMPOSE_EXTRA_FILES:-/compose/docker-compose.argus.yml:/compose/docker-compose.crowdsec.yml}'
+      'COMPOSE_EXTRA_FILES: ${COMPOSE_EXTRA_FILES:-/compose/docker-compose.crowdsec.yml}'
     );
     // The entrypoint reads the colon-separated list, still honours the single
     // legacy variable, and skips files that do not exist.
@@ -50,11 +51,16 @@ describe('docker-compose.crowdsec.yml', () => {
     expect(manager()).toContain('if [ -n "$COMPOSE_EXTRA_FILE" ]; then');
     expect(manager()).toContain("tr ':' ' '");
     expect(manager()).toContain('-f $EXTRA_FILE');
+    expect(manager()).toContain('EXTRA_FILES="$COMPOSE_EXTRA_FILE${EXTRA_FILES:+:$EXTRA_FILES}"');
   });
 
   it('configures PostgreSQL with the password from the environment', () => {
     expect(configLocal()).toContain('type: postgresql');
     expect(configLocal()).toContain('password: ${CROWDSEC_POSTGRES_PASSWORD}');
     expect(configLocal()).toContain('host: crowdsec-postgres');
+    // Check the engine's own service block: setting POSTGRES_PASSWORD on the
+    // database alone does not make it available to config.yaml.local.
+    const engine = overlay().split(/\r?\n  crowdsec:\r?\n/)[1].split(/\r?\n  crowdsec-postgres:/)[0];
+    expect(engine).toContain('CROWDSEC_POSTGRES_PASSWORD: ${CROWDSEC_POSTGRES_PASSWORD:?ERROR - CROWDSEC_POSTGRES_PASSWORD is required}');
   });
 });

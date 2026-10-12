@@ -5,6 +5,8 @@ on:
     paths:
       - 'docker/caddy/**'
       - 'docker/crowdsec/**'
+      - 'docker/l4-port-manager/**'
+      - 'scripts/check-crowdsec-compose.py'
       - 'docker-compose*.yml'
       - 'documentation/examples/crowdsec/**'
       - 'tests/unit/caddy-crowdsec.test.ts'
@@ -14,6 +16,8 @@ on:
     paths:
       - 'docker/caddy/**'
       - 'docker/crowdsec/**'
+      - 'docker/l4-port-manager/**'
+      - 'scripts/check-crowdsec-compose.py'
       - 'docker-compose*.yml'
       - 'documentation/examples/crowdsec/**'
       - 'tests/unit/caddy-crowdsec.test.ts'
@@ -45,28 +49,7 @@ jobs:
           docker run --rm ingressi-crowdsec:ci caddy list-modules | grep '^http.handlers.crowdsec$'
           docker run --rm ingressi-crowdsec:ci caddy list-modules | grep '^crowdsec$'
           docker run --rm ingressi-crowdsec:ci caddy list-modules | grep 'dns.providers.bunny'
-      - name: Validate Compose with the CrowdSec overlay, alone and next to Argus
-        env:
-          ADMIN_USERNAME: ci-admin
-          ADMIN_PASSWORD: ci-validation-only
-          SESSION_SECRET: ci-validation-only-not-for-deployment
-          CLICKHOUSE_PASSWORD: ci-validation-only
-          CROWDSEC_API_KEY: ci-validation-only-bouncer-key
-          CROWDSEC_POSTGRES_PASSWORD: ci-validation-only-db
+      - name: Build the fork port manager and test merged deployment and recreation
         run: |
-          docker compose -f docker-compose.yml -f docker-compose.crowdsec.yml config --quiet
-          docker compose -f docker-compose.yml -f docker-compose.argus.yml -f docker-compose.crowdsec.yml config --quiet
-          docker compose -f docker-compose.yml -f docker-compose.argus.yml -f docker-compose.crowdsec.yml config --format json | python3 -c '
-          import json, sys
-          cfg = json.load(sys.stdin)
-          services = cfg["services"]
-          for name in ("crowdsec", "crowdsec-postgres"):
-              assert not services[name].get("ports"), name + " must not publish ports"
-          def env_of(name):
-              env = services[name]["environment"]
-              return env if isinstance(env, dict) else dict(item.split("=", 1) for item in env)
-          assert env_of("caddy").get("CROWDSEC_API_KEY") == "ci-validation-only-bouncer-key"
-          files = env_of("l4-port-manager").get("COMPOSE_EXTRA_FILES", "")
-          assert "docker-compose.crowdsec.yml" in files and "docker-compose.argus.yml" in files, files
-          print("compose overlay checks OK")
-          '
+          docker build -f docker/l4-port-manager/Dockerfile -t ingressi-l4-port-manager-crowdsec:local .
+          python3 scripts/check-crowdsec-compose.py

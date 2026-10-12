@@ -43,7 +43,7 @@ CrowdSec, API quản lý ban, đồng bộ master/slave.
 
 - Linux amd64, Docker Engine + Docker Compose v2 (Ubuntu 24.04 là mục tiêu đã
   xác nhận).
-- Bản checkout của repo này (fork) — image `web` và `caddy` được build từ đây,
+- Bản checkout của repo này (fork) — image `web`, `caddy` và `l4-port-manager` được build từ đây,
   image không nằm trên registry nào.
 - Thêm vào `.env` (giữ nguyên các biến bắt buộc sẵn có):
 
@@ -59,8 +59,10 @@ CROWDSEC_API_KEY=
 CROWDSEC_POSTGRES_PASSWORD=
 ```
 
-Với cấu hình Argus + CrowdSec dùng chung, đặt thêm khi cần (entrypoint của
-L4 port manager đã tự mặc định cả hai file):
+Chỉ CrowdSec: port manager mặc định giữ riêng overlay CrowdSec. Khi chọn thêm
+overlay Argus trong `COMPOSE_FILE`, biến `COMPOSE_EXTRA_FILE` của Argus được
+đặt trước CrowdSec khi recreate. File Argus có trong repo không tự kích hoạt nó.
+Nếu cần chỉ định nhiều overlay khác, đặt đủ các file theo đúng thứ tự khởi động:
 
 ```dotenv
 # COMPOSE_EXTRA_FILES=/compose/docker-compose.argus.yml:/compose/docker-compose.crowdsec.yml
@@ -71,11 +73,18 @@ L4 port manager đã tự mặc định cả hai file):
 Chạy tại thư mục repo:
 
 ```sh
-# Build image web (có settings/API CrowdSec) và caddy (có bouncer).
-docker compose build web caddy
+# Build cả port manager của fork để hỗ trợ giữ nhiều overlay.
+docker compose build web caddy l4-port-manager
 # Dựng toàn bộ stack, gồm crowdsec + crowdsec-postgres.
 docker compose up -d
 docker compose ps
+```
+
+Với stack đã chạy, vẫn phải build và recreate `l4-port-manager`; image upstream
+không có thay đổi hỗ trợ `COMPOSE_EXTRA_FILES` của fork:
+
+```sh
+docker compose up -d --no-deps --no-build --pull never --force-recreate l4-port-manager
 ```
 
 Kiểm tra nhanh:
@@ -193,10 +202,29 @@ docker compose up -d --force-recreate crowdsec caddy
 
 1. Đưa enforcement về 0 trước: global `false` và mọi host về `inherit` qua
    API (hoặc xóa hẳn group — xem mục 8).
-2. Muốn quay về image cũ: bỏ overlay khỏi `COMPOSE_FILE` (và
-   `COMPOSE_EXTRA_FILES`), build/pull lại image `caddy`/`web` đúng bản cũ rồi
-   `docker compose up -d`.
-3. Volume `crowdsec-*` giữ lại nếu còn dùng lại (xóa bằng `docker compose down -v` — cẩn thận, mất decisions + credentials CAPI).
+2. Khi overlay vẫn còn trong `COMPOSE_FILE`, dừng và gỡ riêng hai container:
+
+   ```sh
+   docker compose stop crowdsec crowdsec-postgres
+   docker compose rm -f crowdsec crowdsec-postgres
+   ```
+
+3. Bỏ overlay khỏi `COMPOSE_FILE` (và `COMPOSE_EXTRA_FILES`), build/pull lại
+   image `caddy`/`web`/`l4-port-manager` đúng bản cần dùng rồi `docker compose up -d`.
+4. Mặc định giữ lại các volume CrowdSec để có thể khôi phục. Nếu muốn xóa hẳn,
+   sao lưu trước, xác định đúng tên project rồi liệt kê từng volume:
+
+   ```sh
+   PROJECT=ingressi # thay bằng tên project thực tế trong `docker compose ls`
+   docker volume ls --filter "label=com.docker.compose.project=$PROJECT" --filter 'label=com.docker.compose.volume=crowdsec-config'
+   docker volume ls --filter "label=com.docker.compose.project=$PROJECT" --filter 'label=com.docker.compose.volume=crowdsec-data'
+   docker volume ls --filter "label=com.docker.compose.project=$PROJECT" --filter 'label=com.docker.compose.volume=crowdsec-postgres-data'
+   ```
+
+   Chỉ dùng `docker volume rm TEN_VOLUME` với từng tên đã xác nhận từ ba lệnh
+   trên. Việc này xóa decisions, dữ liệu engine và credentials CAPI. Không dùng
+   `docker compose down --volumes` để gỡ CrowdSec: lệnh đó xóa cả volume Ingressi
+   và Caddy trong cùng project, bao gồm database dashboard và chứng chỉ.
 
 Trước khi bỏ overlay, bắt buộc mọi host `inherit` + global `false` (bước 1):
 cấu hình Caddy còn handler `crowdsec` mà image không có module sẽ bị Caddy

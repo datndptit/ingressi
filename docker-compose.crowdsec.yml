@@ -8,7 +8,7 @@
 # docker-compose.yml:docker-compose.argus.yml:docker-compose.crowdsec.yml).
 #
 # It adds two services — the CrowdSec Security Engine and its own PostgreSQL —
-# and pins the caddy and web services to the images built from this fork. The
+# and pins caddy, web and the port manager to images built from this fork. The
 # bouncer itself is enforced by Ingressi (Settings and REST API); this file
 # only supplies the services, the shared bouncer key and Caddy's access log.
 #
@@ -30,6 +30,8 @@ services:
       # in the generated configuration. Rotating it needs the old bouncer
       # deleted first (documentation/crowdsec.vi.md).
       BOUNCER_KEY_ingressi: ${CROWDSEC_API_KEY:?ERROR - CROWDSEC_API_KEY is required}
+      # config.yaml.local expands this inside the engine container.
+      CROWDSEC_POSTGRES_PASSWORD: ${CROWDSEC_POSTGRES_PASSWORD:?ERROR - CROWDSEC_POSTGRES_PASSWORD is required}
       # The official Caddy collection: the access-log parser and the generic
       # HTTP scenarios.
       COLLECTIONS: crowdsecurity/caddy
@@ -93,13 +95,14 @@ services:
     image: ingressi-web-crowdsec:local
 
   # The port manager passes -f explicitly and therefore ignores COMPOSE_FILE.
-  # Keep this overlay — and the Argus one, when it is in use — when it
-  # recreates Caddy after an L4 port change; files that do not exist are
-  # skipped. Set COMPOSE_EXTRA_FILES yourself to add further overlays (for
-  # example docker-compose.postgres.yml).
+  # Keep this overlay when it recreates Caddy after an L4 port change. Argus
+  # supplies COMPOSE_EXTRA_FILE only when its overlay is selected; the manager
+  # places that legacy overlay before this list, preserving Compose order.
+  # Set COMPOSE_EXTRA_FILES explicitly for further overlays, in startup order.
   l4-port-manager:
+    image: ingressi-l4-port-manager-crowdsec:local
     environment:
-      COMPOSE_EXTRA_FILES: ${COMPOSE_EXTRA_FILES:-/compose/docker-compose.argus.yml:/compose/docker-compose.crowdsec.yml}
+      COMPOSE_EXTRA_FILES: ${COMPOSE_EXTRA_FILES:-/compose/docker-compose.crowdsec.yml}
 
 volumes:
   crowdsec-config:
