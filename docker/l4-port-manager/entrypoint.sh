@@ -25,6 +25,9 @@
 #   POLL_INTERVAL         - Seconds between trigger file checks (default: 2)
 #   COMPOSE_SKIP_OVERRIDE - If non-empty, skip docker-compose.override.yml (useful in test environments)
 #   COMPOSE_EXTRA_FILE    - If set, include this additional compose file (e.g. a test-specific override)
+#   COMPOSE_EXTRA_FILES   - Colon-separated list of additional compose files, all included; combined
+#                           with COMPOSE_EXTRA_FILE (when that is set). Files that do not exist are
+#                           skipped, so one list can cover optional overlays (e.g. Argus and CrowdSec).
 #   APPLY_LOCK_MAX_AGE    - Seconds after which an apply lock is considered stale (default: 10)
 #   CADDY_STARTUP_WAIT    - Seconds to wait at startup for a stopped caddy container to come back, e.g.
 #                           while an image updater recreates it, before recreating it here (default: 60)
@@ -159,8 +162,24 @@ do_apply() {
   if [ -z "$COMPOSE_SKIP_OVERRIDE" ] && [ -f "$COMPOSE_DIR/docker-compose.override.yml" ]; then
     COMPOSE_ARGS="$COMPOSE_ARGS -f $COMPOSE_DIR/docker-compose.override.yml"
   fi
-  if [ -n "$COMPOSE_EXTRA_FILE" ] && [ -f "$COMPOSE_EXTRA_FILE" ]; then
-    COMPOSE_ARGS="$COMPOSE_ARGS -f $COMPOSE_EXTRA_FILE"
+  # Extra overlay files: the colon-separated COMPOSE_EXTRA_FILES (preferred
+  # when set) plus the single COMPOSE_EXTRA_FILE, which older overlays still
+  # set. A file that does not exist is skipped, so one configured list can
+  # cover optional overlays — recreating Caddy then keeps every overlay that
+  # is actually in use (e.g. Argus and CrowdSec together, or just one).
+  EXTRA_FILES="${COMPOSE_EXTRA_FILES:-}"
+  if [ -n "$COMPOSE_EXTRA_FILE" ]; then
+    case ":$EXTRA_FILES:" in
+      *":$COMPOSE_EXTRA_FILE:"*) ;;
+      *) EXTRA_FILES="${EXTRA_FILES:+$EXTRA_FILES:}$COMPOSE_EXTRA_FILE" ;;
+    esac
+  fi
+  if [ -n "$EXTRA_FILES" ]; then
+    for EXTRA_FILE in $(printf '%s' "$EXTRA_FILES" | tr ':' ' '); do
+      if [ -f "$EXTRA_FILE" ]; then
+        COMPOSE_ARGS="$COMPOSE_ARGS -f $EXTRA_FILE"
+      fi
+    done
   fi
   if [ -f "$OVERRIDE_FILE" ]; then
     COMPOSE_ARGS="$COMPOSE_ARGS -f $OVERRIDE_FILE"

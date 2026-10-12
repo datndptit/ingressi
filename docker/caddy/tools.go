@@ -41,6 +41,7 @@ import (
 	_ "github.com/corazawaf/coraza-caddy/v2"
 	_ "github.com/datndptit/coraza-mlcheck"
 	_ "github.com/fuomag9/caddy-blocker-plugin"
+	_ "github.com/hslatman/caddy-crowdsec-bouncer/http"
 	_ "github.com/mholt/caddy-l4"
 	_ "github.com/mholt/caddy-ratelimit"
 	_ "github.com/pberkel/caddy-storage-redis"

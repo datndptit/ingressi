@@ -476,6 +476,22 @@ export async function saveWafSettings(s: WafSettings, options: { actorUserId?: n
   });
 }
 
+// Global CrowdSec integration: whether the CrowdSec HTTP bouncer applies to
+// proxy hosts that inherit their mode (caddy-crowdsec.ts). The LAPI URL, the
+// bouncer key and the polling interval are deployment configuration
+// (docker-compose.crowdsec.yml), not settings.
+export type CrowdsecSettings = {
+  enabled: boolean;
+};
+
+export async function getCrowdsecSettings(): Promise<CrowdsecSettings | null> {
+  return await getEffectiveSetting<CrowdsecSettings>("crowdsec");
+}
+
+export async function saveCrowdsecSettings(s: CrowdsecSettings): Promise<void> {
+  await setSetting("crowdsec", { enabled: Boolean(s.enabled) });
+}
+
 // Global error pages, applied as fallback error routes across every proxy host.
 // Per-host error pages take precedence over these.
 export type ErrorPagesSettings = {

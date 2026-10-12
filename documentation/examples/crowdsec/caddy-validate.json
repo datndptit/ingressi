@@ -1,0 +1,67 @@
+{
+  "admin": {
+    "disabled": true
+  },
+  "apps": {
+    "crowdsec": {
+      "api_url": "http://crowdsec:8080/",
+      "api_key": "{env.CROWDSEC_API_KEY}",
+      "ticker_interval": "15s",
+      "enable_streaming": true,
+      "enable_hard_fails": false
+    },
+    "http": {
+      "servers": {
+        "test": {
+          "listen": [
+            ":8080"
+          ],
+          "routes": [
+            {
+              "match": [
+                {
+                  "host": [
+                    "shop.example.com"
+                  ]
+                }
+              ],
+              "group": "crowdsec"
+            },
+            {
+              "match": [
+                {
+                  "host": [
+                    "*.example.com"
+                  ]
+                }
+              ],
+              "group": "crowdsec",
+              "handle": [
+                {
+                  "handler": "crowdsec"
+                }
+              ]
+            },
+            {
+              "match": [
+                {
+                  "host": [
+                    "*.example.com"
+                  ]
+                }
+              ],
+              "handle": [
+                {
+                  "handler": "static_response",
+                  "status_code": 200,
+                  "body": "OK"
+                }
+              ],
+              "terminal": true
+            }
+          ]
+        }
+      }
+    }
+  }
+}

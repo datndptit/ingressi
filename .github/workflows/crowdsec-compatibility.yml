@@ -1,0 +1,72 @@
+name: CrowdSec compatibility
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - 'docker/caddy/**'
+      - 'docker/crowdsec/**'
+      - 'docker-compose*.yml'
+      - 'documentation/examples/crowdsec/**'
+      - 'tests/unit/caddy-crowdsec.test.ts'
+      - 'tests/unit/crowdsec-overlay.test.ts'
+      - '.github/workflows/crowdsec-compatibility.yml'
+  pull_request:
+    paths:
+      - 'docker/caddy/**'
+      - 'docker/crowdsec/**'
+      - 'docker-compose*.yml'
+      - 'documentation/examples/crowdsec/**'
+      - 'tests/unit/caddy-crowdsec.test.ts'
+      - 'tests/unit/crowdsec-overlay.test.ts'
+      - '.github/workflows/crowdsec-compatibility.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compatibility:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache-dependency-path: docker/caddy/go.sum
+      - name: Resolve the pinned bouncer module (root module, not the /http package)
+        working-directory: docker/caddy
+        run: go list -m github.com/hslatman/caddy-crowdsec-bouncer
+      - name: Build through Ingressi's manifest pipeline
+        run: docker build -f docker/caddy/Dockerfile -t ingressi-crowdsec:ci .
+      - name: Validate the generated CrowdSec config and the registered modules
+        run: |
+          docker run --rm -e CROWDSEC_API_KEY=ci-validation-key \
+            --mount "type=bind,source=$PWD/documentation/examples/crowdsec/caddy-validate.json,target=/tmp/validate.json,readonly" \
+            ingressi-crowdsec:ci caddy validate --config /tmp/validate.json
+          docker run --rm ingressi-crowdsec:ci caddy build-info | grep 'github.com/hslatman/caddy-crowdsec-bouncer'
+          docker run --rm ingressi-crowdsec:ci caddy list-modules | grep '^http.handlers.crowdsec$'
+          docker run --rm ingressi-crowdsec:ci caddy list-modules | grep '^crowdsec$'
+          docker run --rm ingressi-crowdsec:ci caddy list-modules | grep 'dns.providers.bunny'
+      - name: Validate Compose with the CrowdSec overlay, alone and next to Argus
+        env:
+          ADMIN_USERNAME: ci-admin
+          ADMIN_PASSWORD: ci-validation-only
+          SESSION_SECRET: ci-validation-only-not-for-deployment
+          CLICKHOUSE_PASSWORD: ci-validation-only
+          CROWDSEC_API_KEY: ci-validation-only-bouncer-key
+          CROWDSEC_POSTGRES_PASSWORD: ci-validation-only-db
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.crowdsec.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.argus.yml -f docker-compose.crowdsec.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.argus.yml -f docker-compose.crowdsec.yml config --format json | python3 -c '
+          import json, sys
+          cfg = json.load(sys.stdin)
+          services = cfg["services"]
+          for name in ("crowdsec", "crowdsec-postgres"):
+              assert not services[name].get("ports"), name + " must not publish ports"
+          def env_of(name):
+              env = services[name]["environment"]
+              return env if isinstance(env, dict) else dict(item.split("=", 1) for item in env)
+          assert env_of("caddy").get("CROWDSEC_API_KEY") == "ci-validation-only-bouncer-key"
+          files = env_of("l4-port-manager").get("COMPOSE_EXTRA_FILES", "")
+          assert "docker-compose.crowdsec.yml" in files and "docker-compose.argus.yml" in files, files
+          print("compose overlay checks OK")
+          '

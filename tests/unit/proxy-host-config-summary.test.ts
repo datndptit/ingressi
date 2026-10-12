@@ -29,6 +29,7 @@ function host(extra: Partial<ProxyHost> = {}): ProxyHost {
     geoblock: null,
     geoblockMode: 'merge',
     waf: null,
+    crowdsec: null,
     mtls: null,
     ingressiForwardAuth: null,
     forwardAuth: null,

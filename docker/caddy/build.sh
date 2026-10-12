@@ -48,6 +48,12 @@ github.com/datndptit/coraza-mlcheck
 github.com/pberkel/caddy-storage-redis
 MODULES
 
+# The CrowdSec bouncer's /http package is not a module of its own: resolve the
+# pinned version from the module root and import the HTTP handler (which pulls
+# in the crowdsec app and, unconfigured, the appsec handler).
+crowdsec_version="$(module_version github.com/hslatman/caddy-crowdsec-bouncer)"
+set -- "$@" --with "github.com/hslatman/caddy-crowdsec-bouncer/http@$crowdsec_version"
+
 # Set by update-compatibility-pins.sh only while Caddy imports github.com/google/cel-go.
 cel_go_version="$(go list -m -f '{{if .Replace}}{{.Replace.Version}}{{end}}' github.com/google/cel-go 2>/dev/null || true)"
 if [ -n "$cel_go_version" ]; then

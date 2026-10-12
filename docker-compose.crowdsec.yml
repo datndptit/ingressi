@@ -1,0 +1,107 @@
+# CrowdSec for the Ingressi Caddy (documentation/crowdsec.vi.md). A second
+# override of docker-compose.yml; it changes nothing unless you name it:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.crowdsec.yml up -d
+#
+# (or put COMPOSE_FILE=docker-compose.yml:docker-compose.crowdsec.yml in .env
+# and run docker compose as usual; combine with the Argus overlay as
+# docker-compose.yml:docker-compose.argus.yml:docker-compose.crowdsec.yml).
+#
+# It adds two services — the CrowdSec Security Engine and its own PostgreSQL —
+# and pins the caddy and web services to the images built from this fork. The
+# bouncer itself is enforced by Ingressi (Settings and REST API); this file
+# only supplies the services, the shared bouncer key and Caddy's access log.
+#
+# .env needs, besides the usual variables:
+#
+#   CROWDSEC_API_KEY=...            the bouncer key (openssl rand -hex 32)
+#   CROWDSEC_POSTGRES_PASSWORD=...  the engine database password
+#                                   (openssl rand -hex 32)
+#
+# LAPI and PostgreSQL stay on the compose network; no port is published.
+services:
+  crowdsec:
+    container_name: ingressi-crowdsec
+    image: crowdsecurity/crowdsec:v1.8.1
+    restart: unless-stopped
+    environment:
+      # Registers the bouncer "ingressi" on first start. The same value is the
+      # bouncer key Caddy reads through the {env.CROWDSEC_API_KEY} placeholder
+      # in the generated configuration. Rotating it needs the old bouncer
+      # deleted first (documentation/crowdsec.vi.md).
+      BOUNCER_KEY_ingressi: ${CROWDSEC_API_KEY:?ERROR - CROWDSEC_API_KEY is required}
+      # The official Caddy collection: the access-log parser and the generic
+      # HTTP scenarios.
+      COLLECTIONS: crowdsecurity/caddy
+    volumes:
+      # Configuration, local agent credentials and the CAPI registration
+      # (online API credentials) persist here.
+      - crowdsec-config:/etc/crowdsec
+      # Mandatory since CrowdSec 1.7: hub data files. The container refuses to
+      # start without a mount here, PostgreSQL or not.
+      - crowdsec-data:/var/lib/crowdsec/data
+      # PostgreSQL instead of the image's SQLite, keeping the image's own
+      # config.yaml; the password comes from the environment.
+      - ./docker/crowdsec/config.yaml.local:/etc/crowdsec/config.yaml.local:ro
+      # Reads the JSON access log the caddy service writes (/logs/access.log).
+      - ./docker/crowdsec/acquis.d/caddy.yaml:/etc/crowdsec/acquis.d/caddy.yaml:ro
+      - caddy-logs:/logs:ro
+    depends_on:
+      crowdsec-postgres:
+        condition: service_healthy
+    networks:
+      - caddy-network
+    healthcheck:
+      test: ["CMD", "cscli", "lapi", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+
+  crowdsec-postgres:
+    container_name: ingressi-crowdsec-postgres
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: crowdsec
+      POSTGRES_USER: crowdsec
+      POSTGRES_PASSWORD: ${CROWDSEC_POSTGRES_PASSWORD:?ERROR - CROWDSEC_POSTGRES_PASSWORD is required}
+    volumes:
+      - crowdsec-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crowdsec -d crowdsec"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    stop_grace_period: 30s
+    networks:
+      - caddy-network
+
+  # The Caddy of this fork: the Ingressi module set plus the CrowdSec HTTP
+  # bouncer (docker/caddy/go.mod). Build it with `docker compose build caddy`.
+  caddy:
+    image: ingressi-caddy-crowdsec:local
+    environment:
+      # Read by the bouncer only, through the {env.CROWDSEC_API_KEY}
+      # placeholder in the generated JSON — never stored in Ingressi.
+      CROWDSEC_API_KEY: ${CROWDSEC_API_KEY:?ERROR - CROWDSEC_API_KEY is required}
+
+  # The dashboard of this fork, which carries the CrowdSec settings group and
+  # the per-host modes. Build it with `docker compose build web`.
+  web:
+    image: ingressi-web-crowdsec:local
+
+  # The port manager passes -f explicitly and therefore ignores COMPOSE_FILE.
+  # Keep this overlay — and the Argus one, when it is in use — when it
+  # recreates Caddy after an L4 port change; files that do not exist are
+  # skipped. Set COMPOSE_EXTRA_FILES yourself to add further overlays (for
+  # example docker-compose.postgres.yml).
+  l4-port-manager:
+    environment:
+      COMPOSE_EXTRA_FILES: ${COMPOSE_EXTRA_FILES:-/compose/docker-compose.argus.yml:/compose/docker-compose.crowdsec.yml}
+
+volumes:
+  crowdsec-config:
+  crowdsec-data:
+  crowdsec-postgres-data:

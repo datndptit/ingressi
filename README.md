@@ -61,6 +61,34 @@ Notes:
 - Rollback: remove all ML rules and apply before switching Caddy back to an image without the plugin; keep the image digest and the versioned model directory.
 - Full guide (Vietnamese) with the complete checklist, rollout and rollback: [documentation/argus-sentinel-v4.vi.md](documentation/argus-sentinel-v4.vi.md). The generic quick start below runs the base stack without ML.
 
+## CrowdSec bouncer in this fork
+
+This fork also ships a CrowdSec integration: the pinned Caddy build embeds the
+[`hslatman/caddy-crowdsec-bouncer`](https://github.com/hslatman/caddy-crowdsec-bouncer)
+HTTP bouncer, and `docker-compose.crowdsec.yml` runs the CrowdSec Security
+Engine (v1.8.1) with its own PostgreSQL. Enforcement is managed from Ingressi —
+a global switch and a per-host mode (inherit / on / off), in Settings via REST
+(`/api/v1/settings/crowdsec`, `/api/v1/crowdsec/hosts`) — with no CrowdSec UI;
+requests pass CrowdSec → Blocked sources → rate limit → Coraza. The engine
+reads Caddy's JSON access log and registers with CAPI for the Community
+Blocklist. AppSec, the L4 matcher and master/slave are out of scope.
+
+```dotenv
+COMPOSE_FILE=docker-compose.yml:docker-compose.crowdsec.yml
+# With the Argus overlay:
+# COMPOSE_FILE=docker-compose.yml:docker-compose.argus.yml:docker-compose.crowdsec.yml
+CROWDSEC_API_KEY=...
+CROWDSEC_POSTGRES_PASSWORD=...
+```
+
+```sh
+docker compose build web caddy
+docker compose up -d
+docker compose exec crowdsec cscli lapi status
+```
+
+Full guide (Vietnamese): [documentation/crowdsec.vi.md](documentation/crowdsec.vi.md).
+
 [![License: MIT + Elastic-2.0 (ee/)](https://img.shields.io/badge/license-MIT%20%2B%20Elastic--2.0%20%28ee%2F%29-green.svg)](#license)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://www.docker.com/)
@@ -106,7 +134,7 @@ Ingressi also includes alerting, configuration history and rollback, SAML and LD
 
 ## Documentation
 
-- **Installing and running:** [Configuration reference](documentation/configuration.md), [Security](documentation/security.md), [Upgrade notes](documentation/upgrade-notes.md), [Upgrading from Caddy Proxy Manager](documentation/upgrading-to-ingressi.md), [Setup checklist](documentation/setup-checklist.md), [PostgreSQL](documentation/postgresql.md), [Instance sync](documentation/instance-sync.md), [Fleet management](ee/docs/fleet.md), [High availability](ee/docs/high-availability.md), [Scheduled backups](ee/docs/scheduled-backups.md), [Air-gapped installs](ee/docs/air-gapped.md), [Argus Sentinel v4 ML overlay (this fork)](documentation/argus-sentinel-v4.vi.md)
+- **Installing and running:** [Configuration reference](documentation/configuration.md), [Security](documentation/security.md), [Upgrade notes](documentation/upgrade-notes.md), [Upgrading from Caddy Proxy Manager](documentation/upgrading-to-ingressi.md), [Setup checklist](documentation/setup-checklist.md), [PostgreSQL](documentation/postgresql.md), [Instance sync](documentation/instance-sync.md), [Fleet management](ee/docs/fleet.md), [High availability](ee/docs/high-availability.md), [Scheduled backups](ee/docs/scheduled-backups.md), [Air-gapped installs](ee/docs/air-gapped.md), [Argus Sentinel v4 ML overlay (this fork)](documentation/argus-sentinel-v4.vi.md), [CrowdSec bouncer (this fork)](documentation/crowdsec.vi.md)
 - **Dashboard:** [Overview](documentation/overview.md), [Needs attention](documentation/needs-attention.md), [Search and the command palette](documentation/command-palette.md), [Settings](documentation/settings.md), [Profile, sessions and API tokens](documentation/profile.md), [Audit log](documentation/audit-log.md), [Charts](documentation/charts.md), [Alerting](ee/docs/alerting.md), [Configuration history](ee/docs/config-history.md), [Change approvals](ee/docs/change-approvals.md), [White-label](ee/docs/white-label.md)
 - **Hosts and certificates:** [Proxy hosts](documentation/proxy-hosts.md), [Proxy host editor](documentation/proxy-host-editor.md), [L4 proxy hosts](documentation/l4-proxy-hosts.md), [Host tags](documentation/host-tags.md), [Certificates](documentation/certificates.md), [Default response](documentation/default-response.md), [Upstream DNS pinning](documentation/upstream-dns-pinning.md), [API monetization](ee/docs/api-monetization.md)
 - **Optional protections:** [Web application firewall](documentation/waf.md), [Security events](documentation/security-events.md), [Access lists](documentation/access-lists.md), [Geo blocking](documentation/geo-blocking.md), [Rate limiting](documentation/rate-limiting.md)

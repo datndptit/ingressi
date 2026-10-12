@@ -41,6 +41,7 @@ import {
   getDefaultResponseSettings,
   getTrustedProxiesSettings,
   getRateLimitSettings,
+  getCrowdsecSettings,
   withSettingsSnapshot,
   type AcmeSettings,
   type DnsSettings,
@@ -48,6 +49,7 @@ import {
   type UpstreamDnsResolutionSettings,
   type GeoBlockSettings,
   type WafSettings,
+  type CrowdsecSettings,
   type TrustedProxiesSettings,
   type RateLimitSettings
 } from "./settings";
@@ -82,12 +84,14 @@ import {
   proxyHosts,
   l4ProxyHosts
 } from "./db/schema";
-import { type GeoBlockMode, type WafHostConfig, type MtlsConfig, type RedirectRule, type RewriteConfig, type LocationRuleMeta, type PathAllowRule, type PathBlockRule, type PathRewriteRule, type ErrorPageRule } from "./models/proxy-hosts";
+import { type GeoBlockMode, type WafHostConfig, type CrowdsecHostConfig, type MtlsConfig, type RedirectRule, type RewriteConfig, type LocationRuleMeta, type PathAllowRule, type PathBlockRule, type PathRewriteRule, type ErrorPageRule } from "./models/proxy-hosts";
 import { stripPlaceholders } from "./caddy-placeholders";
 import { buildClientAuthentication, groupMtlsDomainsByCaSet, buildMtlsRbacSubroutes, buildFingerprintCelExpression, buildValidClientCertCelExpression, resolveAllowedFingerprints, type MtlsAccessRuleLike } from "./caddy-mtls";
 import { buildRoleFingerprintMap, buildCertFingerprintMap, buildRoleCertIdMap } from "./models/mtls-roles";
 import { getAccessRulesForHosts } from "./models/mtls-access-rules";
+import { buildCrowdsecApp, buildCrowdsecRoutePlan, type CrowdsecRouteHost } from "./caddy-crowdsec";
 import { buildWafHandlerEntry, resolveEffectiveWaf, wafDirectiveSource, wafExclusionsForHost } from "./caddy-waf";
+import { resolveEffectiveCrowdsec } from "./crowdsec-host-mode";
 import { listWafExclusionRows, type WafExclusionRow } from "./models/waf-exclusions";
 import {
   buildHostRateLimit,
@@ -458,6 +462,7 @@ type ProxyHostMeta = {
   geoblock?: GeoBlockSettings;
   geoblock_mode?: GeoBlockMode;
   waf?: WafHostConfig;
+  crowdsec?: CrowdsecHostConfig;
   mtls?: MtlsMeta;
   redirects?: RedirectRule[];
   rewrite?: RewriteConfig;
@@ -1142,6 +1147,7 @@ type BuildProxyRoutesOptions = {
   globalUpstreamDnsResolutionSettings: UpstreamDnsResolutionSettings | null;
   globalGeoBlock?: GeoBlockSettings | null;
   globalWaf?: WafSettings | null;
+  globalCrowdsec?: CrowdsecSettings | null;
   mtlsRbac?: {
     roleFingerprintMap: Map<number, Set<string>>;
     certFingerprintMap: Map<number, string>;
@@ -1240,10 +1246,18 @@ async function buildProxyRoutes(
   accessAccounts: Map<number, AccessListEntryRow[]>,
   tlsReadyCertificates: Set<number>,
   options: BuildProxyRoutesOptions
-): Promise<{ routes: CaddyHttpRoute[]; errorRoutes: CaddyHttpRoute[]; namedRoutes: Record<string, CaddyHttpRoute> }> {
+): Promise<{
+  routes: CaddyHttpRoute[];
+  errorRoutes: CaddyHttpRoute[];
+  namedRoutes: Record<string, CaddyHttpRoute>;
+  /** The CrowdSec route group (see caddy-crowdsec.ts); empty unless a served host is enforced. */
+  crowdsecRoutes: CaddyHttpRoute[];
+  crowdsecEnabled: boolean;
+}> {
   const routes: CaddyHttpRoute[] = [];
   const errorRoutes: CaddyHttpRoute[] = [];
   const namedRoutes: Record<string, CaddyHttpRoute> = {};
+  const crowdsecHosts: CrowdsecRouteHost[] = [];
   const validClientCertExpression = buildValidClientCertCelExpression();
   const rateLimitDefaults = options.globalRateLimit ?? null;
   const rateLimitCtx = rateLimitContext(rateLimitDefaults);
@@ -1275,6 +1289,9 @@ async function buildProxyRoutes(
 
     const handlers: Record<string, unknown>[] = [];
     const meta = parseJson<ProxyHostMeta>(row.meta, {});
+    // Every host the builder serves takes part in the CrowdSec route group:
+    // enforced hosts run the bouncer, exempt hosts keep a pass-through route.
+    crowdsecHosts.push({ domains, enabled: resolveEffectiveCrowdsec(options.globalCrowdsec ?? null, meta.crowdsec) });
     const authentik = parseAuthentikConfig(meta.authentik);
     const forwardAuth = parseForwardAuthConfig(meta.forward_auth);
     const ingressiForwardAuth = meta.cpm_forward_auth?.enabled ? meta.cpm_forward_auth : null;
@@ -2455,7 +2472,14 @@ async function buildProxyRoutes(
     }
   }
 
-  return { routes: sortRoutesByHostPriority(routes), errorRoutes, namedRoutes };
+  const crowdsecPlan = buildCrowdsecRoutePlan(crowdsecHosts);
+  return {
+    routes: sortRoutesByHostPriority(routes),
+    errorRoutes,
+    namedRoutes,
+    crowdsecRoutes: crowdsecPlan.routes,
+    crowdsecEnabled: crowdsecPlan.enabled,
+  };
 }
 
 function buildTlsConnectionPolicies(
@@ -2990,6 +3014,7 @@ const CADDY_BUILD_SETTING_KEYS = [
   "error_pages",
   "logging",
   "metrics",
+  "crowdsec",
   CERTIFICATE_STORAGE_SETTING_KEY,
 ] as const;
 
@@ -3225,7 +3250,7 @@ async function buildCaddyDocumentFromDatabase() {
   ]);
 
   const { usage: certificateUsage, autoManagedDomains } = collectCertificateUsage(proxyHostRows, certificateMap);
-  const [generalSettings, acmeSettings, dnsSettings, upstreamDnsResolutionSettings, globalGeoBlock, globalWaf, trustedProxiesSettings, defaultResponseSettings, globalRateLimit] = await Promise.all([
+  const [generalSettings, acmeSettings, dnsSettings, upstreamDnsResolutionSettings, globalGeoBlock, globalWaf, trustedProxiesSettings, defaultResponseSettings, globalRateLimit, crowdsecSettings] = await Promise.all([
     getGeneralSettings(),
     getAcmeSettings(),
     getDnsSettings(),
@@ -3234,7 +3259,8 @@ async function buildCaddyDocumentFromDatabase() {
     getWafSettings(),
     getTrustedProxiesSettings(),
     getDefaultResponseSettings(),
-    getRateLimitSettings()
+    getRateLimitSettings(),
+    getCrowdsecSettings()
   ]);
 
   // Optionally seed the global geoblock trusted-proxy list from the server-level
@@ -3267,7 +3293,7 @@ async function buildCaddyDocumentFromDatabase() {
   // Access list rules: a named route per list, and Blocked sources first on the server.
   const accessListConfig = buildAccessListCaddyConfig(accessListRecords, accessListRuleRecords, trustedProxiesSettings);
 
-  const { routes: httpRoutes, errorRoutes: hostErrorRoutes, namedRoutes } = await buildProxyRoutes(
+  const { routes: httpRoutes, errorRoutes: hostErrorRoutes, namedRoutes, crowdsecRoutes, crowdsecEnabled } = await buildProxyRoutes(
     proxyHostRows,
     accessMap,
     readyCertificates,
@@ -3276,6 +3302,7 @@ async function buildCaddyDocumentFromDatabase() {
       globalUpstreamDnsResolutionSettings: upstreamDnsResolutionSettings,
       globalGeoBlock: effectiveGlobalGeoBlock,
       globalWaf,
+      globalCrowdsec: crowdsecSettings,
       mtlsRbac: {
         roleFingerprintMap,
         certFingerprintMap,
@@ -3296,10 +3323,13 @@ async function buildCaddyDocumentFromDatabase() {
   // The global Blocked sources list runs before anything else, on every
   // request the server takes (it has no host matcher and is not terminal:
   // whoever it does not deny goes on to the routes below).
-  const mainRoutes =
+  const serverRoutes =
     accessListConfig.blockedSourcesRoute && hostRoutesWithDefault.length > 0
       ? [accessListConfig.blockedSourcesRoute, ...hostRoutesWithDefault]
       : hostRoutesWithDefault;
+  // The CrowdSec bouncer runs before all of that, at the top of the server:
+  // its routes only match the served hosts (caddy-crowdsec.ts).
+  const mainRoutes = [...crowdsecRoutes, ...serverRoutes];
 
   // Server-level error routes (Caddy handle_errors): per-host rules first so they
   // take precedence, then global rules act as a fallback for any unmatched host/status.
@@ -3454,6 +3484,9 @@ async function buildCaddyDocumentFromDatabase() {
     ...loggingApp,
     apps: {
       ...httpApp,
+      // Emitted only when a served host enforces CrowdSec; the app and the
+      // handler must come from this same build (see caddy-crowdsec.ts).
+      ...(crowdsecEnabled ? { crowdsec: buildCrowdsecApp() } : {}),
       ...(tlsApp || importedCertPems.length > 0 ? {
         tls: {
           ...(tlsApp ?? {}),

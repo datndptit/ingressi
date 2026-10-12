@@ -57,7 +57,12 @@ describe('Argus rules with the current Ingressi WAF builder', () => {
     const overlay = readFileSync(resolve('docker-compose.argus.yml'), 'utf8');
     const manager = readFileSync(resolve('docker/l4-port-manager/entrypoint.sh'), 'utf8');
     expect(overlay).toContain('COMPOSE_EXTRA_FILE: /compose/docker-compose.argus.yml');
-    expect(manager).toContain('-f $COMPOSE_EXTRA_FILE');
+    // The entrypoint includes every configured overlay that exists: the
+    // colon-separated COMPOSE_EXTRA_FILES (which the CrowdSec overlay sets to
+    // both overlays) plus the single COMPOSE_EXTRA_FILE older overlays use.
+    expect(manager).toContain('EXTRA_FILES="${COMPOSE_EXTRA_FILES:-}"');
+    expect(manager).toContain('if [ -n "$COMPOSE_EXTRA_FILE" ]; then');
+    expect(manager).toContain('-f $EXTRA_FILE');
     expect(manager).toContain('--pull never');
   });
 });

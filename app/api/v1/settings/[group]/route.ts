@@ -17,6 +17,7 @@ import {
   getDefaultResponseSettings, saveDefaultResponseSettings,
   getTrustedProxiesSettings, saveTrustedProxiesSettings,
   getRateLimitSettings, saveRateLimitSettings,
+  getCrowdsecSettings, saveCrowdsecSettings,
   getSetting, setSetting, clearSetting,
 } from "@/src/lib/settings";
 import { getInstanceMode, setInstanceMode, getSlaveMasterToken, setSlaveMasterToken } from "@/src/lib/instance-sync";
@@ -75,6 +76,15 @@ const SETTINGS_HANDLERS: Record<string, SettingsHandler> = {
     storageKey: "rate_limit",
     applyCaddy: true,
     audit: "Updated rate limiting defaults",
+  },
+  crowdsec: {
+    // The GET default keeps the REST representation stable before the first
+    // save; the configuration builder treats a missing setting the same way.
+    read: async () => (await getCrowdsecSettings()) ?? { enabled: false },
+    save: saveCrowdsecSettings as (data: never) => Promise<void>,
+    storageKey: "crowdsec",
+    applyCaddy: true,
+    audit: "Updated the CrowdSec settings",
   },
 };
 

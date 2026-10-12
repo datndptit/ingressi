@@ -54,6 +54,7 @@ const host: ProxyHost = {
   geoblock: null,
   geoblockMode: 'merge',
   waf: { enabled: true, mode: 'On', waf_mode: 'merge', excluded_rule_ids: [942430] },
+  crowdsec: null,
   mtls: null,
   ingressiForwardAuth: null,
   forwardAuth: null,

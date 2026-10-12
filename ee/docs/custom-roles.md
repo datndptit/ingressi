@@ -458,6 +458,9 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `app/api/v1/config-history/versions/route.ts` | `GET` | `config_history:read` |
 | `app/api/v1/config/export/route.ts` | `POST` | `config:export` |
 | `app/api/v1/config/import/route.ts` | `POST` | `config:import` |
+| `app/api/v1/crowdsec/hosts/[id]/route.ts` | `GET` | `proxy_hosts:read` |
+| `app/api/v1/crowdsec/hosts/[id]/route.ts` | `PUT` | `proxy_hosts:write` |
+| `app/api/v1/crowdsec/hosts/route.ts` | `GET` | `proxy_hosts:read` |
 | `app/api/v1/fleet/drift/route.ts` | `GET` | `fleet:read` |
 | `app/api/v1/fleet/drift/route.ts` | `POST` | `fleet:write` |
 | `app/api/v1/fleet/environments/[id]/route.ts` | `GET` | `fleet:read` |

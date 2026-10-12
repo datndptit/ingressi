@@ -1,3 +1,7 @@
 # Linux build scripts must also work from Windows checkouts.
 docker/caddy/*.sh text eol=lf
 docker/caddy/Dockerfile text eol=lf
+# The L4 sidecar entrypoint runs under sh in a Linux image; a CRLF checkout
+# makes it die with "set: Illegal option -".
+docker/l4-port-manager/entrypoint.sh text eol=lf
+docker/l4-port-manager/Dockerfile text eol=lf

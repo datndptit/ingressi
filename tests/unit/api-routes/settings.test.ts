@@ -33,6 +33,8 @@ vi.mock('@/src/lib/settings', () => ({
   saveDefaultResponseSettings: vi.fn(),
   getRateLimitSettings: vi.fn(),
   saveRateLimitSettings: vi.fn(),
+  getCrowdsecSettings: vi.fn(),
+  saveCrowdsecSettings: vi.fn(),
   getSetting: vi.fn(),
   setSetting: vi.fn(),
   clearSetting: vi.fn(),
@@ -110,6 +112,7 @@ import {
   getTrustedProxiesSettings, saveTrustedProxiesSettings,
   getDefaultResponseSettings, saveDefaultResponseSettings,
   getDnsProviderSettings, saveDnsProviderSettings,
+  getCrowdsecSettings, saveCrowdsecSettings,
   getSetting, setSetting, clearSetting,
 } from '@/src/lib/settings';
 import { decryptSecret, isEncryptedSecret } from '@/src/lib/secret';
@@ -149,6 +152,8 @@ const mockSaveTrustedProxies = vi.mocked(saveTrustedProxiesSettings);
 const mockGetDefaultResponse = vi.mocked(getDefaultResponseSettings);
 const mockSaveDefaultResponse = vi.mocked(saveDefaultResponseSettings);
 const mockGetDnsProvider = vi.mocked(getDnsProviderSettings);
+const mockGetCrowdsec = vi.mocked(getCrowdsecSettings);
+const mockSaveCrowdsec = vi.mocked(saveCrowdsecSettings);
 const mockGetSetting = vi.mocked(getSetting);
 const mockSetSetting = vi.mocked(setSetting);
 const mockClearSetting = vi.mocked(clearSetting);
@@ -1055,5 +1060,40 @@ describe('updateRateLimitSettingsAction (dashboard form)', () => {
     expect(result).toMatchObject({ success: true });
     expect(mockClearSetting).not.toHaveBeenCalled();
     expect(mockSetSetting).not.toHaveBeenCalled();
+  });
+});
+
+describe('crowdsec settings', () => {
+  it('GET returns the disabled default before the first save', async () => {
+    mockGetCrowdsec.mockResolvedValue(null);
+    const response = await GET(createMockRequest(), { params: Promise.resolve({ group: 'crowdsec' }) });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ enabled: false });
+  });
+
+  it('PUT saves the setting, applies Caddy and records an audit event', async () => {
+    mockSaveCrowdsec.mockResolvedValue(undefined);
+    const response = await PUT(createMockRequest({ method: 'PUT', body: { enabled: true } }), { params: Promise.resolve({ group: 'crowdsec' }) });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(mockSaveCrowdsec).toHaveBeenCalledWith({ enabled: true });
+    expect(mockApplyCaddyConfig).toHaveBeenCalled();
+    expect(vi.mocked(logAuditEvent)).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 1, entityType: 'setting', summary: 'Updated the CrowdSec settings', data: { enabled: true },
+    }));
+  });
+
+  it('PUT rejects a non-boolean enabled and rolls back a refused apply', async () => {
+    const invalid = await PUT(createMockRequest({ method: 'PUT', body: { enabled: 'yes' } }), { params: Promise.resolve({ group: 'crowdsec' }) });
+    expect(invalid.status).toBe(400);
+    expect((await invalid.json()).error).toMatch(/crowdsec\.enabled/);
+
+    const previous = { enabled: false };
+    mockGetSetting.mockResolvedValue(previous);
+    mockSaveCrowdsec.mockResolvedValue(undefined);
+    mockApplyCaddyConfig.mockRejectedValueOnce(new Error('caddy down'));
+    const refused = await PUT(createMockRequest({ method: 'PUT', body: { enabled: true } }), { params: Promise.resolve({ group: 'crowdsec' }) });
+    expect(refused.status).toBe(502);
+    expect(mockSetSetting).toHaveBeenCalledWith('crowdsec', previous);
   });
 });

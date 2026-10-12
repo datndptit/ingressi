@@ -184,6 +184,15 @@ export type WafHostConfig = {
   request_body_limit_action?: 'Reject' | 'ProcessPartial';
 };
 
+/**
+ * Stored (meta JSON) CrowdSec settings of one proxy host. Only a mode that
+ * departs from "inherit" is stored; a host without the section inherits the
+ * global setting (src/lib/crowdsec-host-mode.ts).
+ */
+export type CrowdsecHostConfig = {
+  mode?: 'inherit' | 'on' | 'off';
+};
+
 // Load Balancer Types
 export type LoadBalancingPolicy = "random" | "round_robin" | "least_conn" | "ip_hash" | "first" | "header" | "cookie" | "uri_hash";
 
@@ -432,6 +441,20 @@ function hostCrsLoaded(waf: WafHostConfig): boolean | undefined {
   return waf.waf_mode === "override" ? Boolean(waf.load_owasp_crs) : waf.load_owasp_crs;
 }
 
+/**
+ * The host's CrowdSec section as it is stored: only on/off persist (see
+ * crowdsec-host-mode.ts); "inherit" stores nothing, and anything else is
+ * refused at the input layer.
+ */
+function normalizeCrowdsecMeta(crowdsec: CrowdsecHostConfig | null | undefined): CrowdsecHostConfig | undefined {
+  const mode = crowdsec?.mode;
+  if (mode === undefined || mode === null || mode === "inherit") return undefined;
+  if (mode !== "on" && mode !== "off") {
+    throw new ApiValidationError("crowdsec.mode must be inherit, on or off (leave it out to inherit the global setting)");
+  }
+  return { mode };
+}
+
 function sanitizeMtlsMeta(meta: MtlsConfig | undefined): MtlsConfig | undefined {
   if (!meta?.enabled) {
     return undefined;
@@ -586,6 +609,7 @@ type ProxyHostMeta = {
   geoblock?: GeoBlockSettings;
   geoblock_mode?: GeoBlockMode;
   waf?: WafHostConfig;
+  crowdsec?: CrowdsecHostConfig;
   mtls?: MtlsConfig;
   // Stored under its pre-rename key, which existing databases, exports and
   // replicas on older versions read.
@@ -626,6 +650,7 @@ export type ProxyHost = {
   geoblock: GeoBlockSettings | null;
   geoblockMode: GeoBlockMode;
   waf: WafHostConfig | null;
+  crowdsec: CrowdsecHostConfig | null;
   mtls: MtlsConfig | null;
   ingressiForwardAuth: IngressiForwardAuthConfig | null;
   forwardAuth: ProxyHostForwardAuthConfig | null;
@@ -664,6 +689,7 @@ export type ProxyHostInput = {
   geoblock?: GeoBlockSettings | null;
   geoblockMode?: GeoBlockMode;
   waf?: WafHostConfig | null;
+  crowdsec?: CrowdsecHostConfig | null;
   mtls?: MtlsConfig | null;
   ingressiForwardAuth?: IngressiForwardAuthInput | null;
   forwardAuth?: ProxyHostForwardAuthInput | null;
@@ -1048,6 +1074,11 @@ function serializeMeta(meta: ProxyHostMeta | null | undefined) {
     normalized.waf = meta.waf;
   }
 
+  // Validated in buildMeta, and only when the caller supplies `crowdsec`.
+  if (meta.crowdsec) {
+    normalized.crowdsec = meta.crowdsec;
+  }
+
   if (meta.mtls) {
     const mtls = sanitizeMtlsMeta(meta.mtls);
     if (mtls) {
@@ -1304,6 +1335,7 @@ function parseMeta(value: string | null): ProxyHostMeta {
       geoblock: parsed.geoblock,
       geoblock_mode: parsed.geoblock_mode,
       waf: parsed.waf,
+      crowdsec: parsed.crowdsec,
       mtls: parsed.mtls,
       cpm_forward_auth: sanitizeIngressiForwardAuthMeta(parsed.cpm_forward_auth),
       forward_auth: sanitizeForwardAuthMeta(parsed.forward_auth),
@@ -1966,6 +1998,15 @@ function buildMeta(
     }
   }
 
+  if (input.crowdsec !== undefined) {
+    const crowdsec = normalizeCrowdsecMeta(input.crowdsec);
+    if (crowdsec) {
+      next.crowdsec = crowdsec;
+    } else {
+      delete next.crowdsec;
+    }
+  }
+
   if (input.mtls !== undefined) {
     if (input.mtls && input.mtls.enabled) {
       const mtls = sanitizeMtlsMeta(input.mtls);
@@ -2482,6 +2523,7 @@ function parseProxyHost(row: ProxyHostRow): ProxyHost {
     geoblock: hydrateGeoBlock(meta.geoblock),
     geoblockMode: meta.geoblock_mode ?? "merge",
     waf: meta.waf ?? null,
+    crowdsec: meta.crowdsec ?? null,
     mtls: meta.mtls ?? null,
     ingressiForwardAuth: meta.cpm_forward_auth?.enabled
       ? { enabled: true, protected_paths: meta.cpm_forward_auth.protected_paths ?? null, excluded_paths: meta.cpm_forward_auth.excluded_paths ?? null }
@@ -2712,6 +2754,7 @@ export async function updateProxyHost(id: number, rawInput: Partial<ProxyHostInp
     geoblock: dehydrateGeoBlock(existing.geoblock),
     ...(existing.geoblockMode !== "merge" ? { geoblock_mode: existing.geoblockMode } : {}),
     ...(existing.waf ? { waf: existing.waf } : {}),
+    ...(existing.crowdsec ? { crowdsec: existing.crowdsec } : {}),
     ...(existing.mtls ? { mtls: existing.mtls } : {}),
     ...(existing.ingressiForwardAuth?.enabled ? {
       cpm_forward_auth: {

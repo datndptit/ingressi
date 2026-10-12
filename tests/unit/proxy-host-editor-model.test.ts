@@ -57,6 +57,7 @@ function host(overrides: Partial<ProxyHost> = {}): ProxyHost {
     geoblock: null,
     geoblockMode: 'merge',
     waf: { enabled: true, mode: 'On', waf_mode: 'merge', request_body_limit: 13_107_200, excluded_rule_ids: [942430], custom_directives: '' },
+    crowdsec: null,
     mtls: null,
     ingressiForwardAuth: null,
     forwardAuth: null,

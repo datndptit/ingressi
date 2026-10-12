@@ -1,0 +1,8 @@
+# Caddy's JSON access log for the CrowdSec parser of the crowdsecurity/caddy
+# collection (the caddy-logs parser, label type: caddy). Access logging must
+# be enabled in Ingressi (Settings -> Logging, JSON format); the caddy service
+# writes the file to the shared caddy-logs volume, mounted read-only here.
+filenames:
+  - /logs/access.log
+labels:
+  type: caddy

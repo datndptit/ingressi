@@ -420,6 +420,12 @@ function validateRateLimit(value: Record<string, unknown>): void {
   }
 }
 
+/** The global CrowdSec integration; the LAPI connection is deployment configuration. */
+function validateCrowdsec(value: Record<string, unknown>): void {
+  onlyKeys(value, ["enabled"], "CrowdSec settings");
+  booleanValue(required(value, "enabled", "CrowdSec settings"), "crowdsec.enabled");
+}
+
 function validateDefaultResponse(value: Record<string, unknown>): void {
   onlyKeys(value, ["mode", "status", "body", "headers", "redirectUrl"], "default response settings");
   normalizeDefaultResponseSettings(value);
@@ -463,6 +469,7 @@ export function validateSettingsGroup(
     case "error-pages": validateErrorPages(value); break;
     case "default-response": validateDefaultResponse(value); break;
     case "rate-limit": validateRateLimit(value); break;
+    case "crowdsec": validateCrowdsec(value); break;
     default: invalid("Unknown settings group");
   }
   return input;

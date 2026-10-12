@@ -1,0 +1,21 @@
+# CrowdSec Security Engine settings for the Ingressi CrowdSec overlay
+# (docker-compose.crowdsec.yml). Merged over the image's own config.yaml;
+# only the keys below change. ${VAR} reads the container environment (crowdsec
+# >= 1.5 leaves an undefined reference untouched, so a missing variable fails
+# loudly at the database connection instead of corrupting the password).
+#
+# PostgreSQL instead of the image's default SQLite. The database runs as the
+# crowdsec-postgres service on the Ingressi network; no port is published.
+db_config:
+  type: postgresql
+  user: crowdsec
+  password: ${CROWDSEC_POSTGRES_PASSWORD}
+  db_name: crowdsec
+  host: crowdsec-postgres
+  port: 5432
+  sslmode: disable
+
+# The central API registration (Community Blocklist) needs nothing here: the
+# image's startup script registers on first start and keeps the credentials in
+# /etc/crowdsec/online_api_credentials.yaml, which the crowdsec-config volume
+# persists. Check it with `docker compose exec crowdsec cscli capi status`.
