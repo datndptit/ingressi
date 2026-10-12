@@ -4,17 +4,55 @@ Self-hosted reverse proxy built on [Caddy](https://caddyserver.com/): proxy host
 
 ## Argus Sentinel v4 in this fork
 
-This fork adds the published `datndptit/coraza-mlcheck` action to Ingressi's
-manifest-based Caddy build and an optional `docker-compose.argus.yml` overlay
-that runs the ML-enabled Caddy image. The `datndptit/argus-sidecar` inference
-service is deployed as its own Compose stack and shares only the socket
-volume. Enable detection or blocking through existing WAF custom rules.
-No additional management UI is required.
+This fork adds the published [`datndptit/coraza-mlcheck`](https://github.com/datndptit/coraza-mlcheck) action to Ingressi's manifest-based Caddy build and an optional `docker-compose.argus.yml` overlay that runs the ML-enabled Caddy image. The [`datndptit/argus-sidecar`](https://github.com/datndptit/argus-sidecar) inference service runs as its own Compose stack and shares only the socket volume. Enable detection or blocking through existing WAF custom rules; no additional management UI is required.
 
-Follow the [Ubuntu 24.04 ML deployment guide](documentation/argus-sentinel-v4.vi.md)
-before starting the ML stack. It covers the sidecar stack and private model,
-Caddy build, socket volume, L4 port-manager configuration, rules and
-rollback. The generic quick start below runs the base stack without ML.
+Requirements: Linux amd64 with Docker Engine and Compose v2 (Ubuntu 24.04 is the verified target) and a trusted Argus Sentinel v4 model bundle. Model weights, tokenizer and training data stay outside both repositories and images.
+
+### 1. Deploy the sidecar stack (separate project; start it first)
+
+```sh
+git clone --branch v0.1.0 https://github.com/datndptit/argus-sidecar.git
+cd argus-sidecar
+sudo install -d -m 0755 /opt/argus/models
+sudo python3 scripts/prepare-model.py /path/to/argus_sentinel_v4 /opt/argus/models/v4
+sudo chown -R 10000:10000 /opt/argus/models/v4
+sudo chmod 0750 /opt/argus/models/v4
+sudo find /opt/argus/models/v4 -maxdepth 1 -type f -exec chmod 0640 {} +
+export ARGUS_MODEL_DIR_HOST=/opt/argus/models/v4
+export ARGUS_SOCKET_VOLUME=ingressi-argus-run
+docker compose build --pull
+docker compose up -d
+docker compose exec argus-sidecar python -m argus_sidecar.healthcheck
+```
+
+### 2. Deploy this repository with the ML overlay
+
+On a fresh install, start from the base `.env.example` and fill in the required credentials; on an existing install, keep the current `.env`. Either way, add:
+
+```dotenv
+COMPOSE_FILE=docker-compose.yml:docker-compose.argus.yml
+ARGUS_SOCKET_VOLUME=ingressi-argus-run
+```
+
+Build the ML-enabled Caddy image and recreate it (plus the L4 port manager):
+
+```sh
+docker compose build caddy
+docker compose up -d --no-deps --no-build --pull never caddy l4-port-manager
+docker compose exec caddy caddy build-info | grep github.com/datndptit/coraza-mlcheck
+docker compose exec caddy caddy list-modules | grep dns.providers.bunny
+```
+
+### 3. Enable rules
+
+Turn on the WAF for a host with **Load OWASP CRS** and paste `documentation/examples/argus/detect.conf` into its custom directives. After reviewing real traffic, switch to `block.conf` with WAF mode **On**.
+
+Notes:
+
+- The socket volume is shared by name (`ARGUS_SOCKET_VOLUME`, default `ingressi-argus-run`) and is declared external: Compose fails loudly if the sidecar stack never ran, instead of starting a Caddy without ML. `docker compose down -v` in this project cannot destroy the live socket.
+- Keep `docker-compose.argus.yml` in `COMPOSE_FILE` for later Compose commands; the L4 port manager receives it through `COMPOSE_EXTRA_FILE`.
+- Rollback: remove all ML rules and apply before switching Caddy back to an image without the plugin; keep the image digest and the versioned model directory.
+- Full guide (Vietnamese) with the complete checklist, rollout and rollback: [documentation/argus-sentinel-v4.vi.md](documentation/argus-sentinel-v4.vi.md). The generic quick start below runs the base stack without ML.
 
 [![License: MIT + Elastic-2.0 (ee/)](https://img.shields.io/badge/license-MIT%20%2B%20Elastic--2.0%20%28ee%2F%29-green.svg)](#license)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org/)
@@ -61,7 +99,7 @@ Ingressi also includes alerting, configuration history and rollback, SAML and LD
 
 ## Documentation
 
-- **Installing and running:** [Configuration reference](documentation/configuration.md), [Security](documentation/security.md), [Upgrade notes](documentation/upgrade-notes.md), [Upgrading from Caddy Proxy Manager](documentation/upgrading-to-ingressi.md), [Setup checklist](documentation/setup-checklist.md), [PostgreSQL](documentation/postgresql.md), [Instance sync](documentation/instance-sync.md), [Fleet management](ee/docs/fleet.md), [High availability](ee/docs/high-availability.md), [Scheduled backups](ee/docs/scheduled-backups.md), [Air-gapped installs](ee/docs/air-gapped.md)
+- **Installing and running:** [Configuration reference](documentation/configuration.md), [Security](documentation/security.md), [Upgrade notes](documentation/upgrade-notes.md), [Upgrading from Caddy Proxy Manager](documentation/upgrading-to-ingressi.md), [Setup checklist](documentation/setup-checklist.md), [PostgreSQL](documentation/postgresql.md), [Instance sync](documentation/instance-sync.md), [Fleet management](ee/docs/fleet.md), [High availability](ee/docs/high-availability.md), [Scheduled backups](ee/docs/scheduled-backups.md), [Air-gapped installs](ee/docs/air-gapped.md), [Argus Sentinel v4 ML overlay (this fork)](documentation/argus-sentinel-v4.vi.md)
 - **Dashboard:** [Overview](documentation/overview.md), [Needs attention](documentation/needs-attention.md), [Search and the command palette](documentation/command-palette.md), [Settings](documentation/settings.md), [Profile, sessions and API tokens](documentation/profile.md), [Audit log](documentation/audit-log.md), [Charts](documentation/charts.md), [Alerting](ee/docs/alerting.md), [Configuration history](ee/docs/config-history.md), [Change approvals](ee/docs/change-approvals.md), [White-label](ee/docs/white-label.md)
 - **Hosts and certificates:** [Proxy hosts](documentation/proxy-hosts.md), [Proxy host editor](documentation/proxy-host-editor.md), [L4 proxy hosts](documentation/l4-proxy-hosts.md), [Host tags](documentation/host-tags.md), [Certificates](documentation/certificates.md), [Default response](documentation/default-response.md), [Upstream DNS pinning](documentation/upstream-dns-pinning.md), [API monetization](ee/docs/api-monetization.md)
 - **Optional protections:** [Web application firewall](documentation/waf.md), [Security events](documentation/security-events.md), [Access lists](documentation/access-lists.md), [Geo blocking](documentation/geo-blocking.md), [Rate limiting](documentation/rate-limiting.md)
