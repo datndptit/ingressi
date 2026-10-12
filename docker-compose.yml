@@ -68,6 +68,10 @@ services:
       OAUTH_USERINFO_URL: ${OAUTH_USERINFO_URL:-}
       OAUTH_ALLOW_AUTO_LINKING: ${OAUTH_ALLOW_AUTO_LINKING:-false}
 
+      # Allow HTTP sync between nodes on a trusted private network.
+      # Set false when using HTTPS; HTTP exposes the sync token on the network.
+      INSTANCE_SYNC_ALLOW_HTTP: ${INSTANCE_SYNC_ALLOW_HTTP:-true}
+
       # Instance sync (master): time limit in ms for one sync request to a slave
       INSTANCE_SYNC_TIMEOUT_MS: ${INSTANCE_SYNC_TIMEOUT_MS:-60000}
 

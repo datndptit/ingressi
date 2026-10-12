@@ -43,6 +43,27 @@ Both 409s clear on the next sync. A key reply the master cannot use, a low-order
 
 Use HTTPS slave URLs in production. Set `INSTANCE_SYNC_ALLOW_HTTP=true` only for internal Docker networks; it exposes the sync token to anyone on the path. Slave URLs (from the UI, the API or `INSTANCE_SLAVES`) must not contain credentials, a query string or a fragment; `INSTANCE_SLAVES` entries with an invalid URL are skipped with a warning; entries with a missing name or URL, or a token that breaks the rules above, are skipped without one. The master does not follow redirects, and a request that exceeds `INSTANCE_SYNC_TIMEOUT_MS` (default 60 s) is reported as *"Sync timed out"*; the slave may still finish applying the config.
 
+This fork's `docker-compose.yml` passes `INSTANCE_SYNC_ALLOW_HTTP` to the web
+container and defaults it to `true` for nodes on a trusted private network.
+The application itself still blocks HTTP when the variable is unset outside
+this Compose deployment. Set `INSTANCE_SYNC_ALLOW_HTTP=false` in `.env` to
+require HTTPS.
+
+For an existing two-node deployment reporting `Sync: 1 skipped (HTTP blocked)`,
+update the checkout and set `INSTANCE_SYNC_ALLOW_HTTP=true` in `.env` on each
+node. Recreate the web container using the same Compose files and project name
+as the running deployment (including any Argus or CrowdSec overlays):
+
+```bash
+# When .env already defines COMPOSE_FILE, or only the base Compose file is used:
+docker compose up -d --no-deps --force-recreate web
+docker compose exec -T web printenv INSTANCE_SYNC_ALLOW_HTTP
+```
+
+The last command must print `true`; then retry sync on the master. A plain
+`docker compose restart` does not apply environment changes. No image rebuild
+is needed for this setting.
+
 See the [Environment Variables Reference](https://github.com/ingres-si/ingressi/wiki/Environment-Variables-Reference) for all `INSTANCE_*` options.
 
 ## Sync key pinning
