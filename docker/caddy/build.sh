@@ -44,6 +44,7 @@ github.com/mholt/caddy-l4
 github.com/mholt/caddy-ratelimit
 github.com/fuomag9/caddy-blocker-plugin
 github.com/corazawaf/coraza-caddy/v2
+github.com/datndptit/coraza-mlcheck
 github.com/pberkel/caddy-storage-redis
 MODULES
 

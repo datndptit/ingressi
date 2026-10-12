@@ -20,6 +20,9 @@ env:
 
 jobs:
   build-and-push:
+    # This upstream publisher requires the upstream maintainer's GHCR token.
+    # Forks validate their ML Caddy build in argus-compatibility.yml instead.
+    if: github.repository == 'ingres-si/ingressi'
     runs-on: ubuntu-latest
     permissions:
       contents: read

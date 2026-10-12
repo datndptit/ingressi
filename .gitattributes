@@ -1,0 +1,3 @@
+# Linux build scripts must also work from Windows checkouts.
+docker/caddy/*.sh text eol=lf
+docker/caddy/Dockerfile text eol=lf

@@ -2,6 +2,18 @@
 
 Self-hosted reverse proxy built on [Caddy](https://caddyserver.com/): proxy hosts with automatic HTTPS, load balancing, TCP/UDP streams and traffic analytics, configured from a web dashboard and REST API. Optional per host: a web application firewall, access rules, rate limiting and a sign-in portal. Formerly **Caddy Proxy Manager**.
 
+## Argus Sentinel v4 in this fork
+
+This fork adds the published `datndptit/coraza-mlcheck` action to Ingressi's
+manifest-based Caddy build and an optional `docker-compose.argus.yml` overlay
+for `datndptit/argus-sidecar`. Enable detection or blocking through existing
+WAF custom rules. No additional management UI is required.
+
+Follow the [Ubuntu 24.04 ML deployment guide](documentation/argus-sentinel-v4.vi.md)
+before starting the ML stack. It covers the private model mount, Caddy build,
+socket permissions, L4 port-manager configuration, rules and rollback.
+The generic quick start below runs the base stack without ML.
+
 [![License: MIT + Elastic-2.0 (ee/)](https://img.shields.io/badge/license-MIT%20%2B%20Elastic--2.0%20%28ee%2F%29-green.svg)](#license)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://www.docker.com/)
@@ -13,7 +25,7 @@ Self-hosted reverse proxy built on [Caddy](https://caddyserver.com/): proxy host
 ## Quick start
 
 ```bash
-git clone https://github.com/ingres-si/ingressi.git
+git clone https://github.com/datndptit/ingressi.git
 cd ingressi
 cp .env.example .env
 # Fill in SESSION_SECRET, ADMIN_PASSWORD and CLICKHOUSE_PASSWORD

@@ -42,11 +42,14 @@ RUN (getent group ${PGID} && groupdel $(getent group ${PGID} | cut -d: -f1) || t
     (getent passwd ${PUID} && userdel $(getent passwd ${PUID} | cut -d: -f1) || true) && \
     groupadd -g ${PGID} caddy && \
     useradd -r -u ${PUID} -g caddy -m -d /home/caddy caddy && \
-    mkdir -p /data /config /logs /acme-ca && \
-    chown -R caddy:caddy /data /config /logs /home/caddy && \
+    mkdir -p /data /config /logs /acme-ca /run/argus && \
+    chown -R caddy:caddy /data /config /logs /home/caddy /run/argus && \
     chmod 0777 /acme-ca
 
 COPY --chown=caddy:caddy docker/caddy/Caddyfile /etc/caddy/Caddyfile
+
+# Initialize the shared Argus socket volume with the same UID/GID as Caddy.
+RUN touch /run/argus/.keep && chown caddy:caddy /run/argus/.keep
 
 EXPOSE 80 443 2019
 

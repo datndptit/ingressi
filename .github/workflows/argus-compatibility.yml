@@ -1,0 +1,47 @@
+name: Argus ML compatibility
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - 'docker/caddy/**'
+      - 'docker-compose*.yml'
+      - 'documentation/examples/argus/**'
+      - 'tests/unit/caddy-argus.test.ts'
+      - '.github/workflows/argus-compatibility.yml'
+  pull_request:
+    paths:
+      - 'docker/caddy/**'
+      - 'docker-compose*.yml'
+      - 'documentation/examples/argus/**'
+      - 'tests/unit/caddy-argus.test.ts'
+      - '.github/workflows/argus-compatibility.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compatibility:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache-dependency-path: docker/caddy/go.sum
+      - name: Test released action with Ingressi dependencies
+        working-directory: docker/caddy
+        run: go test -mod=readonly -race github.com/datndptit/coraza-mlcheck/...
+      - name: Build through Ingressi's manifest pipeline
+        run: docker build -f docker/caddy/Dockerfile -t ingressi-argus:ci .
+      - name: Validate generated WAF config and registered modules
+        run: |
+          docker run --rm --mount "type=bind,source=$PWD/documentation/examples/argus/caddy-validate.json,target=/tmp/validate.json,readonly" ingressi-argus:ci caddy validate --config /tmp/validate.json
+          docker run --rm ingressi-argus:ci caddy build-info | grep 'github.com/datndptit/coraza-mlcheck'
+          docker run --rm ingressi-argus:ci caddy list-modules | grep 'dns.providers.bunny'
+      - name: Validate production Compose overlay
+        env:
+          ADMIN_USERNAME: ci-admin
+          ADMIN_PASSWORD: ci-validation-only
+          SESSION_SECRET: ci-validation-only-not-for-deployment
+          CLICKHOUSE_PASSWORD: ci-validation-only
+          ARGUS_MODEL_DIR_HOST: /opt/argus/models/v4
+        run: docker compose -f docker-compose.yml -f docker-compose.argus.yml config --quiet
