@@ -126,6 +126,7 @@ Tạo API token trong Ingressi (Profile → API tokens) rồi dùng
 
 ```sh
 BASE=https://<địa-chỉ-ingressi-của-bạn>
+TOKEN=<dán API token của bạn>
 
 # Bật toàn cục (mặc định cho các host mode "inherit")
 curl -sS -X PUT "$BASE/api/v1/settings/crowdsec" \
