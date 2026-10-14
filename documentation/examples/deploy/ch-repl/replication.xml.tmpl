@@ -1,0 +1,19 @@
+<clickhouse>
+  <macros>
+    <shard>01</shard>
+    <replica>__CH_REPLICA__</replica>
+  </macros>
+  <zookeeper>
+    <node>
+      <host>__CH_KEEPER_HOST__</host>
+      <port>9181</port>
+    </node>
+  </zookeeper>
+  <interserver_http_host>__CH_NODE_IP__</interserver_http_host>
+  <interserver_http_port>9009</interserver_http_port>
+  <interserver_http_credentials>
+    <user>ingressi-replication</user>
+    <password>__CH_INTERSERVER_PW__</password>
+    <allow_empty>false</allow_empty>
+  </interserver_http_credentials>
+</clickhouse>

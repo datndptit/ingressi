@@ -1,0 +1,10 @@
+services:
+  argus-sidecar:
+    container_name: argus-sidecar
+    image: argus-sidecar:latest
+    pull_policy: never
+    build:
+      context: .
+      args:
+        PUID: "1001"
+        PGID: "1001"
