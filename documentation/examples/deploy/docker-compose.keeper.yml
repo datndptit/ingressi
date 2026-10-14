@@ -1,0 +1,26 @@
+# ClickHouse Keeper - chi chay tren node2 (nginxlove2).
+# Nap them tren node2 qua COMPOSE_FILE / COMPOSE_EXTRA_FILES trong .env.
+services:
+  clickhouse-keeper:
+    container_name: ingressi-clickhouse-keeper
+    # Same image as ClickHouse; run its bundled Keeper as a separate process.
+    image: ${CH_IMAGE:?Set CH_IMAGE to a pinned clickhouse image}
+    user: "0:0"
+    entrypoint: ["clickhouse", "keeper", "--config", "/etc/clickhouse-keeper/keeper.xml"]
+    restart: unless-stopped
+    ports:
+      - "9181:9181"
+    volumes:
+      - ./deploy/clickhouse/keeper.xml:/etc/clickhouse-keeper/keeper.xml:ro
+      - clickhouse-keeper-data:/var/lib/clickhouse-keeper
+    networks:
+      - caddy-network
+    healthcheck:
+      test: ["CMD-SHELL", "printf ruok | nc -w 2 127.0.0.1 9181 | grep -q imok"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    stop_grace_period: 30s
+volumes:
+  clickhouse-keeper-data:
