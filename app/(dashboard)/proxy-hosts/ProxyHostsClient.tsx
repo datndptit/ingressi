@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, MoreHorizontal, Plus, Server } from "lucide-react";
@@ -18,6 +18,7 @@ import {
   HIGH_ERROR_RATE,
   PROTECTION_FILTERS,
   PROTECTION_FILTER_LABELS,
+  hostGroupOf,
   primaryDomain,
   type HostListQuery,
   type HostListRow,
@@ -100,33 +101,52 @@ function plural(n: number, one: string, many = `${one}s`): string {
   return `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 }
 
+function SortButton({ label, sortKey, query, onSort }: { label: string; sortKey: SortKey; query: HostListQuery; onSort: (key: SortKey) => void }) {
+  const active = query.sortBy === sortKey;
+  const Icon = active ? (query.sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+  return (
+    <button type="button" onClick={() => onSort(sortKey)} className="inline-flex items-center gap-1 rounded hover:text-foreground">
+      {label}
+      <Icon aria-hidden="true" className={cn("h-3.5 w-3.5", !active && "opacity-50")} />
+    </button>
+  );
+}
+
 function SortHeader({
   label,
   sortKey,
+  alsoSortKey,
+  alsoLabel,
   query,
   onSort,
   className,
 }: {
   label: string;
   sortKey: SortKey;
+  /** A second sort offered in the same column, e.g. the host's name next to its domain. */
+  alsoSortKey?: SortKey;
+  alsoLabel?: string;
   query: HostListQuery;
   onSort: (key: SortKey) => void;
   className?: string;
 }) {
-  const active = query.sortBy === sortKey;
-  const Icon = active ? (query.sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+  const active = query.sortBy === sortKey || (alsoSortKey !== undefined && query.sortBy === alsoSortKey);
   return (
     <th
       scope="col"
       aria-sort={active ? (query.sortDir === "asc" ? "ascending" : "descending") : "none"}
       className={cn("border-b border-line px-2.5 py-2 font-medium", className)}
     >
-      <button type="button" onClick={() => onSort(sortKey)} className="inline-flex items-center gap-1 rounded hover:text-foreground">
-        {label}
-        <Icon aria-hidden="true" className={cn("h-3.5 w-3.5", !active && "opacity-50")} />
-      </button>
+      <span className="inline-flex items-center gap-3">
+        <SortButton label={label} sortKey={sortKey} query={query} onSort={onSort} />
+        {alsoSortKey && alsoLabel && <SortButton label={alsoLabel} sortKey={alsoSortKey} query={query} onSort={onSort} />}
+      </span>
     </th>
   );
+}
+
+function GroupHeading({ group }: { group: string | null }) {
+  return group === null ? <span>No tag</span> : <span className="num">{group}</span>;
 }
 
 function PlainHeader({ children, className }: { children: ReactNode; className?: string }) {
@@ -239,6 +259,8 @@ export default function ProxyHostsClient({
   // The Tags column only when some host has tags.
 
   const showTags = availableTags.length > 0 || rows.some((row) => row.tags.length > 0);
+  // Host, Status, Protection, Certificate and the actions, plus the optional columns.
+  const columnCount = (canWrite ? 1 : 0) + 5 + (showTraffic ? 2 : 0) + (showTags ? 1 : 0);
   const hostById = useMemo(() => new Map(hosts.map((host) => [host.id, host])), [hosts]);
 
   useEffect(() => {
@@ -332,6 +354,26 @@ export default function ProxyHostsClient({
       params.set("sortDir", dir);
     });
   }
+
+  function toggleGrouping() {
+    pushParams((params) => {
+      if (query.groupBy === "tag") params.delete("group");
+      else params.set("group", "tag");
+    });
+  }
+
+  /** The heading to show above a row: the first of the page, and wherever the section changes. */
+  const groupHeadings = useMemo(() => {
+    if (query.groupBy !== "tag") return new Map<number, string | null>();
+    const headings = new Map<number, string | null>();
+    let previous: string | null | undefined;
+    for (const row of rows) {
+      const group = hostGroupOf(row, query.tags);
+      if (group !== previous) headings.set(row.id, group);
+      previous = group;
+    }
+    return headings;
+  }, [rows, query.groupBy, query.tags]);
 
   function clearFilters() {
     setSearchTerm("");
@@ -541,6 +583,16 @@ export default function ProxyHostsClient({
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
+            <Button
+              variant="outline"
+              className="h-[38px]"
+              aria-pressed={query.groupBy === "tag"}
+              disabled={availableTags.length === 0}
+              title="Show the hosts in a section per tag"
+              onClick={toggleGrouping}
+            >
+              {query.groupBy === "tag" ? "Grouped by tag" : "Group by tag"}
+            </Button>
             {filtering && (
               <Button variant="ghost" size="sm" onClick={clearFilters}>
                 Clear filters
@@ -639,7 +691,7 @@ export default function ProxyHostsClient({
                             />
                           </th>
                         )}
-                        <SortHeader label="Host" sortKey="host" query={query} onSort={handleSort} className={cn(!canWrite && "pl-[18px]")} />
+                        <SortHeader label="Host" sortKey="host" alsoLabel="Name" alsoSortKey="name" query={query} onSort={handleSort} className={cn(!canWrite && "pl-[18px]")} />
                         <SortHeader label="Status" sortKey="status" query={query} onSort={handleSort} />
                         {showTraffic && <SortHeader label="Requests, 24h" sortKey="requests" query={query} onSort={handleSort} />}
                         {showTraffic && <SortHeader label="5xx" sortKey="errors" query={query} onSort={handleSort} className="text-right" />}
@@ -655,8 +707,15 @@ export default function ProxyHostsClient({
                       {rows.map((row) => {
                         const isSelected = selected.has(row.id);
                         return (
+                          <Fragment key={row.id}>
+                          {groupHeadings.has(row.id) && (
+                            <tr className="bg-panel2">
+                              <th scope="colgroup" colSpan={columnCount} className="border-b border-line px-[18px] py-1.5 text-left text-xs font-medium text-muted-foreground">
+                                <GroupHeading group={groupHeadings.get(row.id) ?? null} />
+                              </th>
+                            </tr>
+                          )}
                           <tr
-                            key={row.id}
                             className={cn(
                               "border-b border-line align-top last:border-b-0 hover:bg-panel2",
                               isSelected && "bg-brand-tint hover:bg-brand-tint",
@@ -701,6 +760,7 @@ export default function ProxyHostsClient({
                             )}
                             <td className="py-2.5 pl-1.5 pr-[18px] text-right">{actionsMenu(row)}</td>
                           </tr>
+                          </Fragment>
                         );
                       })}
                     </tbody>
@@ -709,8 +769,13 @@ export default function ProxyHostsClient({
 
                 <ul className="flex flex-col md:hidden" aria-label="Proxy hosts">
                   {rows.map((row) => (
+                    <Fragment key={row.id}>
+                    {groupHeadings.has(row.id) && (
+                      <li role="presentation" className="border-b border-line bg-panel2 px-4 py-1.5 text-xs font-medium text-muted-foreground">
+                        <GroupHeading group={groupHeadings.get(row.id) ?? null} />
+                      </li>
+                    )}
                     <li
-                      key={row.id}
                       className={cn(
                         "flex items-start gap-3 border-b border-line px-4 py-3.5 last:border-b-0",
                         selected.has(row.id) && "bg-brand-tint"
@@ -738,6 +803,7 @@ export default function ProxyHostsClient({
                       </div>
                       <div className="shrink-0">{actionsMenu(row)}</div>
                     </li>
+                    </Fragment>
                   ))}
                 </ul>
               </>
