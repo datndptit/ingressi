@@ -1,0 +1,20 @@
+<clickhouse>
+  <macros>
+    <shard>01</shard>
+    <replica>waf-02</replica>
+  </macros>
+  <zookeeper>
+    <node>
+      <host>clickhouse-keeper</host>
+      <port>9181</port>
+    </node>
+  </zookeeper>
+  <interserver_http_host>10.2.159.19</interserver_http_host>
+  <interserver_http_port>9009</interserver_http_port>
+  <interserver_http_credentials>
+    <user>ingressi-replication</user>
+    <!-- replace CHANGE_ME with the interserver password shared by both replicas -->
+    <password>CHANGE_ME</password>
+    <allow_empty>false</allow_empty>
+  </interserver_http_credentials>
+</clickhouse>

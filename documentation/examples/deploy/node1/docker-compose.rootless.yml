@@ -1,0 +1,45 @@
+services:
+  web:
+    ports: !override
+      - "3000:3000"
+    extra_hosts:
+      - "vllm-qween-tt1-anm-ai2.apps.cloudgpu.mbf.vn:10.2.50.22"
+    volumes:
+      - type: bind
+        source: /home/dockerwaf/caddy-logs
+        target: /logs
+        bind:
+          create_host_path: false
+  caddy:
+    volumes:
+      - type: bind
+        source: /home/dockerwaf/caddy-logs
+        target: /logs
+        bind:
+          create_host_path: false
+  crowdsec:
+    volumes:
+      - type: bind
+        source: /home/dockerwaf/caddy-logs
+        target: /logs
+        read_only: true
+        bind:
+          create_host_path: false
+  docker-socket-proxy:
+    volumes:
+      - type: bind
+        source: /run/user/1001/docker.sock
+        target: /var/run/docker.sock
+        read_only: true
+        bind:
+          create_host_path: false
+  clickhouse:
+    image: ${CH_IMAGE:?Set CH_IMAGE to a pinned clickhouse image}
+    ports:
+      - "9009:9009"
+    volumes:
+      - ./deploy/clickhouse/replication.xml:/etc/clickhouse-server/config.d/ingressi-replication.xml:ro
+  l4-port-manager:
+    environment:
+      COMPOSE_HOST_DIR: /home/dockerwaf/ingressi
+      COMPOSE_SKIP_OVERRIDE: "1"
