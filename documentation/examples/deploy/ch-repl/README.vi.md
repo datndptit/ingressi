@@ -38,6 +38,7 @@ xác minh xong mới drop).
 
 ## Ghi chú
 
+- Kit giả định được đặt tại `/home/dockerwaf/ingressi-deploy/ch-repl` (đường dẫn hard-code trong các script).
 - `.interserver_pw` **không được commit** — kit tự sinh trên node và giá trị không bao giờ in ra.
 - Giá trị cần sửa theo cụm mới: mapping trong `ch_finalize_xml.sh`; tên DB/bảng nếu khác
   `analytics.*`.
